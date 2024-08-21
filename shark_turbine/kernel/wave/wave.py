@@ -18,6 +18,8 @@ from .expansion import expand_graph
 from .promotion import promote_placeholders
 from .hoisting import hoist_allocs
 from .utils import canonicalize_module
+from .minimize_global_loads import minimize_global_loads
+from .barriers import add_shared_memory_barriers
 from ..lang import Grid, IndexMapping
 from ..lang.global_symbols import *
 from ..ops import wave_ops
@@ -207,6 +209,12 @@ class LaunchableWave(Launchable):
 
         # Register analysis to determine register shapes.
         determine_register_shape(graph)
+
+        # Optimizations.
+        minimize_global_loads(graph, self.constraints)
+
+        # Add shared memory barriers.
+        add_shared_memory_barriers(graph)
 
         self.grid_type.dims = [1, 1, 1]
         for constraint in self.workgroup_constraints:
