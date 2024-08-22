@@ -25,13 +25,13 @@ def test_copy():
             threads_per_wave=64,
             waves_per_block=(1, 1, 1),
             # vector_shapes={M: 1, N: ELEMS_PER_THREAD}, # TODO: Symbol doesn't work here, but should
-            vector_shapes={M: 1, N: 4},
+            vector_shapes={M: 1, N: 2},
         )
     ]
-    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
-    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, 64)]
-    constraints += [tkw.WaveConstraint(N, 1)]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def test(
@@ -44,15 +44,18 @@ def test_copy():
     config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
     shape = (256, 128)
+    # Shape (128, 256)
+    # Wave has (64, 1)
+    # Workgroup has (64, 1)
     a = torch.randn(shape, dtype=torch.float16)
     b = torch.zeros(shape, dtype=torch.float16)
     with tk.gen.TestLaunchContext(
         {
             M: shape[0],
             N: shape[1],
-            BLOCK_M: 16,
-            BLOCK_N: 16,
-            ELEMS_PER_THREAD: 4,
+            BLOCK_M: 1,
+            BLOCK_N: 128,
+            ELEMS_PER_THREAD: 2,
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
@@ -61,3 +64,6 @@ def test_copy():
     ):
         test(a, b)
         assert_allclose(a, b)
+
+
+# wave_size_x * thread_size
