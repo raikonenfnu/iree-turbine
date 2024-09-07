@@ -989,8 +989,10 @@ class ReduceOp(CustomOp, ABC):
 
     @property
     def type(self) -> Memory:
-        src_type = get_custom(self.arg).type
-        return src_type
+        dst_type = get_custom(self.arg).type
+        dst_shape = [s for s in dst_type.symbolic_shape if s is not self.dim]
+        dst_type.symbolic_shape = dst_shape
+        return dst_type
 
 
 # TODO: Add support for more shuffle types.

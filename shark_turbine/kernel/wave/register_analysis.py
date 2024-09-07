@@ -1,6 +1,6 @@
 from .._support.tracing import CapturedTrace
 from ...support.logging import get_logger
-from ..ops.wave_ops import get_custom, NewRegister, CustomOp, MMA, Reduction
+from ..ops.wave_ops import get_custom, NewRegister, CustomOp, MMA, Reduction, ReduceOp
 import torch.fx as fx
 
 logger = get_logger("turbine.wave.register_analysis")
@@ -36,6 +36,11 @@ def set_register_shape(trace: CapturedTrace, custom: CustomOp) -> None:
             set_register_shape(trace, iter_arg)
             custom.fx_node.thread_shape = iter_arg.fx_node.thread_shape
             break
+        elif isinstance(custom_user, ReduceOp):
+            # continue
+            arg_index = custom_user.fx_node.args.index(custom.fx_node)
+            # Wave constraint
+            print(custom_user.type)
         else:
             raise NotImplementedError(
                 f"Register shape propagation not implemented for {custom_user}"
