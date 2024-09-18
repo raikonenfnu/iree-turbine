@@ -81,6 +81,11 @@ def get_indexed_dims(
     """
     if isinstance(nodeOrDims, CustomOp):
         nodeOrDims = nodeOrDims.indexing_dims
+    # Flatten dims for node with multiple values.
+    if all(isinstance(el, list) for el in nodeOrDims):
+        flattened_dims = list(itertools.chain.from_iterable(nodeOrDims))
+        flatten_dims_set = dict.fromkeys(flattened_dims)
+        nodeOrDims = list(flatten_dims_set)
     return tuple((key, all_dims[key]) for key in nodeOrDims if key in all_dims)
 
 
@@ -317,7 +322,7 @@ def _expand_node(
         return _expand_reduction(
             node, trace, dim_query, dim_scaling, node_index_setter, context
         )
-    elif isinstance(node, GetResult):
+    elif isinstance(node, GetResult) and not isinstance(node, Getitem):
         # The presence of a GetResult node indicates that the reduction has already
         # been expanded. Simply return the corresponding node.
         reduction = get_custom(node.value)
@@ -391,8 +396,12 @@ def _expand_reduction(
     new_output_args = []
     new_init_args = []
     for dim_vals in get_dim_combinations(dim_scaling, expand_dims):
-        for arg_idx, arg in output.node_args.items():
-            dims = {dim: val for dim, val in zip(dim_scaling.keys(), dim_vals)}
+        return_vals = output.return_vals[0]
+        dims = {dim: val for dim, val in zip(dim_scaling.keys(), dim_vals)}
+        if not isinstance(return_vals, Sequence):
+            return_vals = [return_vals]
+        for arg in return_vals:
+            arg = get_custom(arg)
             # Add GetResult nodes for the corresponding dimensions
             reduction.graph.inserting_after(reduction.fx_node)
             new_node = GetResult(reduction.fx_node, len(new_output_args))
@@ -405,18 +414,18 @@ def _expand_reduction(
                 _expand_node(arg, trace, dims, dim_scaling, node_index_setter, context)
             )
 
-            # Proceed with expansion outside the reduction
-            for init_arg in reduction.init_args:
-                new_init_args.append(
-                    _expand_node(
-                        get_custom(init_arg),
-                        trace,
-                        dims,
-                        dim_scaling,
-                        node_index_setter,
-                        context,
-                    )
+        # Proceed with expansion outside the reduction
+        for init_arg in reduction.init_args:
+            new_init_args.append(
+                _expand_node(
+                    get_custom(init_arg),
+                    trace,
+                    dims,
+                    dim_scaling,
+                    node_index_setter,
+                    context,
                 )
+            )
 
     # Update init_args and return values
     reduction.update_arg(
