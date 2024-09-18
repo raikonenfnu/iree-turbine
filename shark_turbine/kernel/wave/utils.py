@@ -16,7 +16,7 @@ from typing import Callable, Any, List, Tuple
 from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexExpr, IndexingContext, IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
-from ..ops.wave_ops import get_custom, Output, Write, MMA
+from ..ops.wave_ops import get_custom, Output, Write, MMA, GetResult
 from .constraints import Constraint, HardwareConstraint, TilingConstraint
 import torch.fx as fx
 import shark_turbine.kernel.lang as tkl
@@ -112,6 +112,20 @@ def DCE(trace: CapturedTrace):
 
     while removable_nodes := trace.walk(is_removable_operator):
         for node in removable_nodes:
+            get_custom(node).graph.erase_node(node)
+
+
+def remove_chained_getresult(trace: CapturedTrace):
+    def is_chained_getresult(node: fx.Node) -> bool:
+        custom = get_custom(node)
+        idxc = IndexingContext.current()
+        return isinstance(custom, GetResult) and isinstance(
+            get_custom(custom.value), GetResult
+        )
+
+    while removable_nodes := trace.walk(is_chained_getresult):
+        for node in removable_nodes:
+            get_custom(node).replace_all_uses_with(get_custom(node).value)
             get_custom(node).graph.erase_node(node)
 
 
