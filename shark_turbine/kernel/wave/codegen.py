@@ -932,4 +932,10 @@ def handle_get_result(emitter: WaveEmitter, node: fx.Node):
 
 @handle_op(operator.getitem)
 def handle_getitem(emitter: WaveEmitter, node: fx.Node):
-    raise NotImplementedError("getitem: Currently only stub implementation")
+    try:
+        value, res_idx = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    for_op = emitter.lookup_node_values(value)[0].owner
+    emitter.bind_node_proxy(node, IRProxyValue(for_op.results[res_idx]))
