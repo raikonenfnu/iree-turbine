@@ -1018,5 +1018,6 @@ def handle_getitem(emitter: WaveEmitter, node: fx.Node):
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
-    for_op = emitter.lookup_node_values(value)[0].owner
-    emitter.bind_node_proxy(node, IRProxyValue(for_op.results[res_idx]))
+    # for_op = emitter.lookup_node_values(value)[0].owner
+    # import pdb; pdb.set_trace()
+    emitter.bind_node_proxy(node, IRProxyValue(emitter.lookup_node_values(value)[0]))
