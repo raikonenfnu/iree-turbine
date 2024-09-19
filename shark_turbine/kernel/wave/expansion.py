@@ -305,6 +305,8 @@ def _expand_node(
     context: ExpandedNodeMap,
     idx_query: int = 0,
 ) -> CustomOp:
+    global last_expanded_iter_arg
+
     """Expand a single node or list of nodes in specific dimensions and recursively proceed to its inputs."""
     if isinstance(node, list):
         expanded_nodes = []
@@ -347,10 +349,15 @@ def _expand_node(
     # Clone the node for the new expansion. The original node is reused for the
     # case of all dimensions being zero.
     if expansion_needed(restricted_dims, node.indexing_dims):
-        new_node = node.copy()
+        new_node = node.copy(
+            anchor=last_expanded_iter_arg if isinstance(node, IterArg) else None
+        )
     else:
         new_node = node
         logger.debug(f"did not clone node: {node} in {restricted_dims}")
+
+    if isinstance(node, IterArg):
+        last_expanded_iter_arg = new_node.fx_node
 
     new_node.fx_node.expanded_dims = restricted_dims
     new_node.fx_node.name = get_expanded_name(node, restricted_dims)
@@ -447,6 +454,7 @@ def _expand_reduction(
             )
 
     # Update init_args and return values
+    # import pdb; pdb.set_trace()
     reduction.update_arg(
         "init_args", [new_init_arg.fx_node for new_init_arg in new_init_args]
     )
