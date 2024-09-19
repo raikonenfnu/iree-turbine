@@ -360,17 +360,28 @@ class CustomOp(ABC):
             raise IndexError("Index out of range")
 
     def copy(
-        self, new_name: Optional[str] = None, new_graph: Optional[fx.Graph] = None
+        self,
+        new_name: Optional[str] = None,
+        new_graph: Optional[fx.Graph] = None,
+        arg_transform: Optional[Callable[[Any], Any]] = lambda x: x,
+        anchor: Optional[fx.Node] = None,
     ) -> Self:
         """Returns a duplicate of this node."""
         graph = new_graph
         if new_graph is None:
             graph = self.graph
+        if anchor:
+            graph.inserting_after(anchor)
+        else:
             graph.inserting_after(self.fx_node)
-        new_node = graph.node_copy(self.fx_node)
+        new_node = graph.node_copy(self.fx_node, arg_transform=arg_transform)
+        #     graph.inserting_after(self.fx_node)
+        # new_node = graph.node_copy(self.fx_node)
         new_node.tkw_op = self
         new_node.tkw_op_name = self.tkw_op_name
-        new_node.index = copy.deepcopy(self.fx_node.index)
+        # new_node.index = copy.deepcopy(self.fx_node.index)
+        if hasattr(self.fx_node, "index"):
+            new_node.index = copy.deepcopy(self.fx_node.index)
         if new_name:
             new_node.name = new_name
         return get_custom(new_node)
