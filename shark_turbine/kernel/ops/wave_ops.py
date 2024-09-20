@@ -987,6 +987,9 @@ class ExtractSlice(CustomOp):
 
     @property
     def type(self) -> "Register":
+        import pdb
+
+        pdb.set_trace()
         return get_custom(self.register_).type
 
 
@@ -1013,7 +1016,9 @@ class ReduceOp(CustomOp, ABC):
     @property
     def type(self) -> Memory:
         src_type = get_custom(self.arg).type
-        return src_type
+        reduced_dims = [dims for dims in src_type.symbolic_shape if dims != self.dim]
+        dst_type = Register[*reduced_dims, src_type.dtype]
+        return dst_type
 
 
 # TODO: Add support for more shuffle types.

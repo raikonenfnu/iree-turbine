@@ -7,7 +7,15 @@ from ..wave.constraints import (
 from .._support.indexing import IndexingContext, IndexSequence, IndexSymbol, IndexExpr
 from .._support.tracing import CapturedTrace
 from ...support.logging import get_logger
-from ..ops.wave_ops import get_custom, NewRegister, CustomOp, MMA, Reduction, ReduceOp
+from ..ops.wave_ops import (
+    get_custom,
+    NewRegister,
+    CustomOp,
+    MMA,
+    Reduction,
+    ReduceOp,
+    BinaryPyOp,
+)
 import torch.fx as fx
 
 logger = get_logger("turbine.wave.register_analysis")
@@ -56,9 +64,7 @@ def set_register_shape(
                 for dim in custom_user.type.symbolic_shape
                 if is_valid_dim(dim)
             ]
-            expected_result_rank = (
-                len(custom_user.type.symbolic_shape) - num_reduction_dims
-            )
+            expected_result_rank = len(custom_user.type.symbolic_shape)
             # If rank do not match => some dims not found in hw_constraint.vector_shape.
             if len(register_shape) != expected_result_rank:
                 raise NotImplementedError(
@@ -70,6 +76,29 @@ def set_register_shape(
                     "NYI: Currently Register semantic only support 0-D vector."
                 )
             custom.fx_node.thread_shape = get_thread_shape(register_shape)
+            break
+        elif isinstance(custom_user, BinaryPyOp):
+            get_thread_shape = lambda reg_shape: max(reg_shape)
+            # Check that dim is non-reduction && in hw_constraint.vector_shape.
+            # TODO: Modify num_reduction_dims once we add support for multi-dim reduction.
+            register_shape = [
+                vector_map[dim]
+                for dim in custom_user.type.symbolic_shape
+                if dim in vector_map
+            ]
+            expected_result_rank = len(custom_user.type.symbolic_shape)
+            # If rank do not match => some dims not found in hw_constraint.vector_shape.
+            if len(register_shape) != expected_result_rank:
+                raise NotImplementedError(
+                    "NYI: Handling of dim not in vector_shapes during register analysis."
+                )
+            num_thread_dims = sum(1 for dim in register_shape if dim > 1)
+            if num_thread_dims > 1:
+                raise NotImplementedError(
+                    "NYI: Currently Register semantic only support 0-D vector."
+                )
+            custom.fx_node.thread_shape = get_thread_shape(register_shape)
+            break
         else:
             raise NotImplementedError(
                 f"Register shape propagation not implemented for {custom_user}"
