@@ -19,7 +19,7 @@ from ..ops.wave_ops import *
 from .._support.indexing import IndexingContext, IndexSequence
 from ...support.logging import get_logger
 from .._support.tracing import CapturedTrace
-from .utils import get_mma_dimensional_mapping
+from .utils import get_mma_dimensional_mapping, flip_except_first
 from ..lang.global_symbols import *
 
 logger = get_logger("turbine.wave.expansion")
@@ -64,12 +64,20 @@ def get_dim_combinations(
 ):
     """
     Returns all combinations of sizes for the selected dimensions.
-    Other dimensions are clamped to 0.
+    Other dimensions are clamped to 0. Due to the way we insert nodes
+    in the fx.graph, we modify the order of the combinations here to ensure
+    that the nodes are inserted into the graph in the correct order.
+    For example, if we have dimensions (M, N, K) and we select (M, K),
+    and the sizes are (2, 3, 4), the order of the nodes in the graph will be:
+    [(0, 0), (0, 1), (0, 2), (0, 3), (1, 0), (1, 1), (1, 2), (1, 3)]
+    but the order of the combinations will be:
+    [(0, 0), (1, 3), (1, 2), (1, 1), (1, 0), (0, 3), (0, 2), (0, 1)]
     """
     adjusted_dimension_sizes = [
         list(range(all_dims[dim])) if dim in selection else [0] for dim in all_dims
     ]
-    return itertools.product(*adjusted_dimension_sizes)
+    combinations = itertools.product(*adjusted_dimension_sizes)
+    return flip_except_first(list(combinations))
 
 
 def get_indexed_dims(
@@ -409,16 +417,29 @@ def _expand_reduction(
 
     new_output_args = []
     new_init_args = []
-    for dim_vals in get_dim_combinations(dim_scaling, expand_dims):
+    dim_combinations = get_dim_combinations(dim_scaling, expand_dims)
+    num_combinations = len(dim_combinations)
+    for dim_vals in dim_combinations:
         return_vals = output.return_vals[0]
         dims = {dim: val for dim, val in zip(dim_scaling.keys(), dim_vals)}
         if not isinstance(return_vals, Sequence):
             return_vals = [return_vals]
         for arg_idx, arg in enumerate(return_vals):
             arg = get_custom(arg)
+        if not isinstance(return_vals, Sequence):
+            return_vals = [return_vals]
+        for arg_idx, arg in enumerate(return_vals):
+            arg = get_custom(arg)
             # Add GetResult nodes for the corresponding dimensions
             reduction.graph.inserting_after(reduction.fx_node)
-            new_node = GetResult(reduction.fx_node, len(new_output_args))
+            new_node = GetResult(
+                reduction.fx_node,
+                (
+                    (num_combinations - len(new_output_args))
+                    if len(new_output_args) > 0
+                    else 0
+                ),
+            )
             new_node.add_to_graph(reduction.graph)
             new_node.fx_node.name = get_expanded_name(new_node, dims)
             context[
@@ -448,9 +469,12 @@ def _expand_reduction(
 
     # Update init_args and return values
     reduction.update_arg(
-        "init_args", [new_init_arg.fx_node for new_init_arg in new_init_args]
+        "init_args",
+        flip_except_first([new_init_arg.fx_node for new_init_arg in new_init_args]),
     )
-    output.update_arg("return_vals", [node.fx_node for node in new_output_args])
+    output.update_arg(
+        "return_vals", flip_except_first([node.fx_node for node in new_output_args])
+    )
     _handle_reduction_dim(
         reduction,
         output,
