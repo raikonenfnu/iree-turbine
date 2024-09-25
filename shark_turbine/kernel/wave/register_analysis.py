@@ -8,7 +8,15 @@ from ..wave.constraints import Constraint
 from .._support.indexing import IndexingContext, IndexSequence, IndexSymbol, IndexExpr
 from .._support.tracing import CapturedTrace
 from ...support.logging import get_logger
-from ..ops.wave_ops import get_custom, NewRegister, CustomOp, MMA, Reduction, ReduceOp
+from ..ops.wave_ops import (
+    get_custom,
+    NewRegister,
+    CustomOp,
+    MMA,
+    Reduction,
+    ReduceOp,
+    BinaryPyOp,
+)
 from .utils import get_hardware_vector_map
 import torch.fx as fx
 
@@ -57,9 +65,27 @@ def set_register_shape(
                 for dim in custom_user.type.symbolic_shape
                 if is_parallel_dim(dim)
             ]
-            expected_result_rank = (
-                len(custom_user.type.symbolic_shape) - custom_user.num_reduction_dims
-            )
+            expected_result_rank = len(custom_user.type.symbolic_shape)
+            # If rank do not match => some dims not found in hw_constraint.vector_shape.
+            if len(register_shape) != expected_result_rank:
+                raise NotImplementedError(
+                    "NYI: Handling of dim not in vector_shapes during register analysis."
+                )
+            non_unit_dims = sum(1 for dim in register_shape if dim > 1)
+            if non_unit_dims > 1:
+                raise NotImplementedError(
+                    "NYI: Currently Register semantic only support 0-D vector."
+                )
+            custom.fx_node.thread_shape = max(register_shape)
+        elif isinstance(custom_user, BinaryPyOp):
+            # Check that dim is non-reduction && in hw_constraint.vector_shape.
+            # TODO: Modify num_reduction_dims once we add support for multi-dim reduction.
+            register_shape = [
+                vector_map[dim]
+                for dim in custom_user.type.symbolic_shape
+                if dim in vector_map
+            ]
+            expected_result_rank = len(custom_user.type.symbolic_shape)
             # If rank do not match => some dims not found in hw_constraint.vector_shape.
             if len(register_shape) != expected_result_rank:
                 raise NotImplementedError(
