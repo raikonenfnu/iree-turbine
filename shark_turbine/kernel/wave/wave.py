@@ -204,6 +204,9 @@ class LaunchableWave(Launchable):
 
         # Expansion
         expand_graph(graph, self.constraints)
+        import pdb
+
+        pdb.set_trace()
 
         # Register analysis to determine register shapes.
         determine_register_shape(graph, self.constraints)

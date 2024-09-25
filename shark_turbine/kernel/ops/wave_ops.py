@@ -521,9 +521,14 @@ class BinaryPyOp(CustomOp, ABC):
         lhs_type = get_custom(self.lhs).type
         rhs_type = get_custom(self.rhs).type
         has_same_type = has_same_custom_type(lhs_type, rhs_type)
-        if not has_same_type:
-            raise ValueError("Expected lhs and rhs to have same type post-expansion")
-        return lhs_type
+        if has_same_type:
+            return lhs_type
+            # raise ValueError("Expected lhs and rhs to have same type post-expansion")
+        lhs_dim_set = set(lhs_type.symbolic_shape)
+        rhs_dim_set = set(rhs_type.symbolic_shape)
+        if lhs_dim_set.isdisjoint(rhs_dim_set):
+            raise ValueError("Expected lhs and rhs to be same type or broadcastable.")
+        return lhs_type if lhs_dim_set > rhs_dim_set else rhs_type
 
 
 @define_interface_op("exp2")

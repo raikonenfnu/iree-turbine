@@ -224,6 +224,10 @@ def set_node_index(
                 )
 
             else:
+                if isinstance(constraint, TilingConstraint) and hasattr(
+                    custom.graph, "subgraphs"
+                ):
+                    continue
                 if index_seq is None:
                     index_seq = constraint.apply()
                 else:
@@ -409,7 +413,11 @@ def _expand_reduction(
 
     new_output_args = []
     new_init_args = []
-    for dim_vals in get_dim_combinations(dim_scaling, expand_dims):
+    tiled_expand_dims = [
+        IndexSymbol(dim.name + "_tiled") if dim == reduction.axis else dim
+        for dim in expand_dims
+    ]
+    for dim_vals in get_dim_combinations(dim_scaling, tiled_expand_dims):
         for arg_idx, arg in output.node_args.items():
             dims = {dim: val for dim, val in zip(dim_scaling.keys(), dim_vals)}
             # Add GetResult nodes for the corresponding dimensions
@@ -489,6 +497,7 @@ def get_dim_scaling(
 
     idxc = IndexingContext.current()
     for constraint in constraints:
+        # TODO: Figure out a way to sperate dim_scaling for inside reduction/tiled and non_tiled.
         if isinstance(constraint, WorkgroupConstraint) or isinstance(
             constraint, TilingConstraint
         ):
@@ -525,8 +534,11 @@ def get_dim_scaling(
                 raise ValueError(
                     "Tile size must be divisible by wave count and vector size"
                 )
-            dim_scaling[constraint.dim] = tile_size // wave_count // vector_size
-            dim_tile_size[constraint.dim] = vector_size
+            constraint_dim = constraint.dim
+            if isinstance(constraint, TilingConstraint):
+                constraint_dim = IndexSymbol(constraint.dim.name + "_tiled")
+            dim_scaling[constraint_dim] = tile_size // wave_count // vector_size
+            dim_tile_size[constraint_dim] = vector_size
     return (dim_scaling, dim_tile_size)
 
 
@@ -550,7 +562,8 @@ def _handle_reduction_dim(
     # Users of the loop carried nodes will be duplicated
     for idx, carried_node in enumerate(iter_args):
         # The initial nodes are expanded in the first dimension, so we start from 1
-        for scale_idx in range(1, dim_scaling[reduction.axis]):
+        reduction_tiled_axis = IndexSymbol(reduction.axis.name + "_tiled")
+        for scale_idx in range(1, dim_scaling[reduction_tiled_axis]):
             for user in carried_node.users:
                 if isinstance(user, Output):
                     continue
