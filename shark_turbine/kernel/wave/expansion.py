@@ -224,6 +224,10 @@ def set_node_index(
                 )
 
             else:
+                if isinstance(constraint, TilingConstraint) and hasattr(
+                    custom.graph, "subgraphs"
+                ):
+                    continue
                 if index_seq is None:
                     index_seq = constraint.apply()
                 else:
@@ -489,6 +493,7 @@ def get_dim_scaling(
 
     idxc = IndexingContext.current()
     for constraint in constraints:
+        # TODO: Figure out a way to sperate dim_scaling for inside reduction/tiled and non_tiled.
         if isinstance(constraint, WorkgroupConstraint) or isinstance(
             constraint, TilingConstraint
         ):
