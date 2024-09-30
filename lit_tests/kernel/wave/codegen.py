@@ -1058,7 +1058,6 @@ def test_reduce_non_iv_acc():
     @tkw.wave(constraints)
     def test(
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f32],
-        b: tkl.Memory[M, ADDRESS_SPACE, tkl.f32],
         c: tkl.Memory[M, ADDRESS_SPACE, tkl.f32],
     ):
         init_sum = tkl.Register[M, tkl.f32](0)
