@@ -52,7 +52,7 @@ def set_index_size(custom: CustomOp, target_dim_sizes: list[DimSize]):
 #################################################################
 
 anchorOpTypes = (Read, Write, MMA, ReduceOp)
-noHandleTypes = (Placeholder, Output, ExtractSlice, Allocate)
+noHandleTypes = (Placeholder, Output, ExtractSlice, Allocate, GetResult)
 nonPropagatableTypes = anchorOpTypes + noHandleTypes
 
 
@@ -155,10 +155,16 @@ def determine_thread_shapes(trace: CapturedTrace):
     for anchor_op in anchor_ops:
         custom = get_custom(anchor_op)
         index_sizes = get_custom_dim_sizes(custom)
-        if isinstance(custom, (Read, ReduceOp)):
+        if isinstance(custom, Read):
             fwd_slice = capture_forward_slice(custom.fx_node, propagatable_op)
             thread_size_to_ops[index_sizes] = thread_size_to_ops.get(
                 index_sizes, set([])
+            ).union(fwd_slice)
+        elif isinstance(custom, ReduceOp):
+            fwd_slice = capture_forward_slice(custom.fx_node, propagatable_op)
+            reduce_dims = frozenset([DimSize(dim, 1) for dim in custom.index.keys()])
+            thread_size_to_ops[reduce_dims] = thread_size_to_ops.get(
+                reduce_dims, set([])
             ).union(fwd_slice)
         elif isinstance(custom, Write):
             bwd_slice = capture_backward_slice(custom.fx_node, propagatable_op)
@@ -169,9 +175,10 @@ def determine_thread_shapes(trace: CapturedTrace):
             lhs_bwd_slice = capture_backward_slice(custom.lhs, propagatable_op)
             rhs_bwd_slice = capture_backward_slice(custom.rhs, propagatable_op)
             acc_slice = capture_forward_slice(custom.acc, propagatable_op)
-            acc_slice = acc_slice.union(
-                capture_backward_slice(custom.acc, propagatable_op)
-            )
+            if not isinstance(get_custom(custom.acc), MMA):
+                acc_slice = acc_slice.union(
+                    capture_backward_slice(custom.acc, propagatable_op)
+                )
             acc_index = get_dim_sizes(custom.acc_index)
             lhs_index = get_dim_sizes(custom.lhs_index)
             rhs_index = get_dim_sizes(custom.rhs_index)
