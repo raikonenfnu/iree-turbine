@@ -184,6 +184,7 @@ def set_node_index(
     elements_per_thread = getattr(custom, "elements_per_thread", None)
 
     for dim in custom.indexing_dims:
+        dim_test = "init"
         index_seq = None
         for constraint in sorted_constraints:
             if isinstance(constraint, HardwareConstraint):
@@ -222,7 +223,11 @@ def set_node_index(
                         continue
                 index_seq = constraint.apply(dim, *inputs, dim in mma_index)
                 if dim in mma_index:
-                    index_seq = specialize_index_sequence(index_seq, mma_slices, custom)
+                    # Newly expanded op may not be found in mma_slices.
+                    pre_expanded_src = getattr(custom.fx_node, "expanded_src", custom)
+                    index_seq = specialize_index_sequence(
+                        index_seq, mma_slices, pre_expanded_src
+                    )
 
             elif constraint.dim == dim:
                 if index_seq is None:
@@ -369,6 +374,7 @@ def _expand_node(
         _expand_node.last_expanded_iter_arg = new_node.fx_node
 
     new_node.fx_node.expanded_dims = restricted_dims
+    new_node.fx_node.expanded_src = node
     new_node.fx_node.name = get_expanded_name(node, restricted_dims)
     node_index_setter(new_node, restricted_dims)
 
