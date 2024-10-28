@@ -631,6 +631,7 @@ def capture_mma_slices(mma: MMA) -> dict[IndexSymbol, list[fx.Node]]:
     mma_slices[MMA_ACC] += capture_forward_slice(mma.fx_node, is_not_mma).union(
         capture_backward_slice(mma.acc, is_not_mma)
     )
+    # import pdb; pdb.set_trace()
     return mma_slices
 
 

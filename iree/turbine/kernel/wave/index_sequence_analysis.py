@@ -270,6 +270,8 @@ def set_node_index(
                     # Assumes vector shapes are associated with workgroup dims.
                     if dim not in workgroup_constraints:
                         continue
+                    if dim not in constraint.vector_shapes:
+                        import pdb; pdb.set_trace()
                     assert (
                         dim in constraint.vector_shapes
                     ), f"Dimension {dim} not found in vector shapes"

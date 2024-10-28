@@ -1304,7 +1304,11 @@ class ReduceOp(CustomOp, ABC):
             from ..wave.utils import all_equal
 
             src_types = [get_custom(arg).type for arg in self.arg]
-            if not all_equal(src_types):
+            ref_shape = src_types[0].symbolic_shape
+            ref_dtype = src_types[0].dtype
+
+            if not all(src_type.symbolic_shape == ref_shape and src_type.dtype == ref_dtype for src_type in src_types):
+                import pdb; pdb.set_trace()
                 raise NotImplementedError(
                     "NYI: Only support case where all inputs to ReduceOp to have same type."
                 )

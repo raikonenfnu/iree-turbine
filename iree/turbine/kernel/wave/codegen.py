@@ -912,8 +912,11 @@ def handle_binary_op(op):
                 lhs, rhs = node.args
             except ValueError as e:
                 raise ValidationError("Malformed arguments") from e
-            lhs = cast_py_value(emitter, lhs)
-            rhs = cast_py_value(emitter, rhs)
+            try:
+                lhs = cast_py_value(emitter, lhs)
+                rhs = cast_py_value(emitter, rhs)
+            except:
+                import pdb; pdb.set_trace()
 
             if lhs.ir_value.type != rhs.ir_value.type:
                 raise ValidationError("Expected lhs and rhs to have same type.")
@@ -1084,7 +1087,10 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
         subgraph: fx.Graph = emitter.trace.get_subgraph(subgraph)
         iter_args: list[fx.Node] = get_custom(node).iter_args(subgraph)
         for i, v in enumerate(forOp.inner_iter_args):
-            emitter.bind_node_proxy(iter_args[i], IRProxyValue(v))
+            try:
+                emitter.bind_node_proxy(iter_args[i], IRProxyValue(v))
+            except:
+                import pdb; pdb.set_trace()
         captured_vars: list[fx.Node] = get_custom(node).captured_vars(subgraph)
         for root_v, subgraph_v in zip(implicit_capture, captured_vars):
             emitter._node_values[subgraph_v] = emitter.lookup_node_values(root_v)

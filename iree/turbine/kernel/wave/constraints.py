@@ -311,6 +311,7 @@ class TilingConstraint(Constraint):
 
     def apply(self) -> IndexSequence:
         if self.induction_var is None:
+            import pdb; pdb.set_trace()
             raise ValueError(
                 "Index is being computed without setting induction variable"
             )
