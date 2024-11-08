@@ -6,6 +6,7 @@
 
 from ..ops.wave_ops import (
     Allocate,
+    Read,
     Write,
     ExtractSlice,
     get_custom,
@@ -61,7 +62,17 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
         read more than a single element.
         """
         custom = get_custom(node)
-        if isinstance(custom, Write):
+        if isinstance(custom, Read):
+            strides = [custom.index[dim].stride for dim in custom.index]
+            elements_per_thread = [custom.index[dim].size for dim in custom.index]
+            strides = [x for x, y in zip(strides, elements_per_thread) if y > 1]
+            num_strided_accesses = sum(1 for stride in strides if stride > 1)
+            if num_strided_accesses > 1:
+                raise NotImplementedError(
+                    "Support for strided accesses on more than one dimension not implemented yet!"
+                )
+            return num_strided_accesses == 1
+        elif isinstance(custom, Write):
             strides = [
                 simplify_index(custom.register_index[dim]).stride
                 for dim in custom.register_index
@@ -83,10 +94,20 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
     hw_constraint = [c for c in constraints if isinstance(c, HardwareConstraint)][0]
     for operator in strided_operators:
         custom = get_custom(operator)
-        simplified_index = {
-            dim: simplify_index(custom.register_index.get(dim, custom.index[dim]))
-            for dim in custom.index
-        }
+        if isinstance(custom, Read):
+            simplified_index = {
+                dim: simplify_index(custom.index.get(dim, custom.index[dim]))
+                for dim in custom.index
+            }
+        elif isinstance(custom, Write):
+            simplified_index = {
+                dim: simplify_index(custom.register_index.get(dim, custom.index[dim]))
+                for dim in custom.index
+            }
+        else:
+            raise NotImplementedError(
+                "Expected strided operator to only be read or write."
+            )
 
         shape = get_vector_shape(
             custom.vector_shapes, custom.register_type.symbolic_shape
