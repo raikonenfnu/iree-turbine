@@ -20,6 +20,7 @@ class MMAType(Enum):
     F32_32x32x8_F16 = 1
     F32_16x16x32_F8 = 2
     F32_32x32x16_F8 = 3
+    F32_16x16x32_K4_F8 = 4
 
 
 class MMAOperand(Enum):
@@ -93,7 +94,7 @@ class HardwareConstraint(Constraint):
                 return (16, 16, 16)
             case MMAType.F32_32x32x8_F16:
                 return (32, 32, 8)
-            case MMAType.F32_16x16x32_F8:
+            case MMAType.F32_16x16x32_F8 | MMAType.F32_16x16x32_K4_F8:
                 return (16, 16, 32)
             case MMAType.F32_32x32x16_F8:
                 return (32, 32, 16)
@@ -235,6 +236,26 @@ class HardwareConstraint(Constraint):
                     Piecewise((1, ~MMA_ACC), (32, MMA_ACC)),  # M
                     1,  # N
                     1,  # K
+                ]
+            case MMAType.F32_16x16x32_K4_F8:
+                offset = [
+                    Piecewise(
+                        (lane % 16, ~MMA_ACC), (4 * floor(lane / 16), MMA_ACC)
+                    ),  # M
+                    lane % 16,  # N
+                    (
+                        (16 * floor(GPR_NUM / 4)) + 4 * floor(lane / 16) + (GPR_NUM % 4)
+                    ),  # K
+                ]
+                size = [
+                    Piecewise((1, ~MMA_ACC), (4, MMA_ACC)),  # M
+                    1,  # N
+                    8,  # K
+                ]
+                stride = [
+                    Piecewise((1, ~MMA_ACC), (16, MMA_ACC)),  # M
+                    1,  # N
+                    16,  # K
                 ]
             case _:
                 raise ValueError("Unsupported MMA type")

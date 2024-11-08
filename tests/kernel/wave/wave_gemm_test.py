@@ -197,6 +197,7 @@ def testGemm(
     "mfma_variant",
     [
         MMAType.F32_16x16x32_F8,
+        MMAType.F32_16x16x32_K4_F8,
         MMAType.F32_32x32x16_F8,
     ],
 )
