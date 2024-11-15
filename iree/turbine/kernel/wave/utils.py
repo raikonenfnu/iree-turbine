@@ -272,9 +272,9 @@ def get_mma_dimensional_mapping(
         mapping[custom][n] = MMAOperand.N
         mapping[custom][k] = MMAOperand.K
         custom.vector_shapes = {
-            m: hardware_constraint.mma_matrix_shapes[0],
-            n: hardware_constraint.mma_matrix_shapes[1],
-            k: hardware_constraint.mma_matrix_shapes[2],
+            m: hardware_constraint.mma_matrix_shapes(custom.mma_type)[0],
+            n: hardware_constraint.mma_matrix_shapes(custom.mma_type)[1],
+            k: hardware_constraint.mma_matrix_shapes(custom.mma_type)[2],
         }
         if hardware_constraint.vector_shapes:
             custom.vector_shapes.update(hardware_constraint.vector_shapes)
@@ -839,6 +839,8 @@ def get_mfma_load_elems_per_thread(mfma_variant: MMAType) -> int:
             return 8
         case MMAType.F32_16x16x32_K4_F8:
             return 8
+        case MMAType.F32_32x32x16_K4_F8:
+            return 8
 
 
 def get_mfma_store_elems_per_thread(mfma_variant: MMAType) -> int:
@@ -853,6 +855,8 @@ def get_mfma_store_elems_per_thread(mfma_variant: MMAType) -> int:
             return 16
         case MMAType.F32_16x16x32_K4_F8:
             return 4
+        case MMAType.F32_32x32x16_K4_F8:
+            return 16
 
 
 def all_equal(input_list: list[Any]) -> bool:
