@@ -41,6 +41,10 @@ def get_custom_dim_sizes(custom: CustomOp):
 def set_index_size(custom: CustomOp, target_dim_sizes: list[DimSize]):
     for target in target_dim_sizes:
         if target.dim not in custom.index:
+            # Allow target dimensions to be missing in the source index only if they are unit dims.
+            if target.size == 1:
+                continue
+            breakpoint()
             raise NotImplementedError(
                 "NYI: Handle when source target index size is not found in target/user index."
             )

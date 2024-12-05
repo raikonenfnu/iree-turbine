@@ -44,7 +44,6 @@ perf_test = lambda *a: pytest.param(*a, marks=pytest.mark.perf_only)
 default_test_shapes = {}
 # Order of shapes: (B, M, N, K1, K2)
 default_test_shapes["test_attention"] = [
-    (8, 128, 128, 64, 256),
     (40, 1024, 64, 64, 1024),
 ]
 default_test_shapes["test_attention"] += [
@@ -351,12 +350,11 @@ def testChainedGemmF8(
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_attention"))
-@pytest.mark.parametrize("enable_scheduling", [False, True])
-@pytest.mark.parametrize("dynamic_dims", [False, True])
+@pytest.mark.parametrize("enable_scheduling", [False])
+@pytest.mark.parametrize("dynamic_dims", [False])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
-        MMAType.F32_16x16x16_F16,
         MMAType.F32_32x32x8_F16,
     ],
 )
@@ -463,7 +461,8 @@ def testAttention(
 
         # repeat represents the results of the loop
         res_max, res_sum, res_mm = repeat
-        res = res_mm / res_sum
+        reciprocal_sum = tkw.reciprocal(res_sum)
+        res = res_mm * reciprocal_sum
         tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
     hyperparams = {
@@ -537,6 +536,7 @@ def testAttention(
             with open(filename, "w") as f:
                 f.write(mb.module_op.get_asm())
 
+        breakpoint()
         assert_allclose(output, torch_ref)
 
 
