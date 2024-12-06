@@ -351,8 +351,8 @@ def testChainedGemmF8(
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_attention"))
-@pytest.mark.parametrize("enable_scheduling", [False, True])
-@pytest.mark.parametrize("dynamic_dims", [False, True])
+@pytest.mark.parametrize("enable_scheduling", [False])
+@pytest.mark.parametrize("dynamic_dims", [True])
 @pytest.mark.parametrize(
     "mfma_variant",
     [

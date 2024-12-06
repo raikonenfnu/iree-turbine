@@ -60,6 +60,7 @@ from .._support.tracing import (
     KernelRegionGraph,
     Launchable,
 )
+from .cache import get_cache_manager
 
 import sympy
 
@@ -364,6 +365,21 @@ class LaunchableWave(Launchable):
         return mb, graph, exe, kernel_sig, entrypoint_name
 
     def test_execute(self, args, kwargs):
+        run = kwargs.get("run", False)
+        run_bench = kwargs.get("run_bench", False)
+        create_vmfb_file = kwargs.get("create_vmfb_file", None)
+        dynamic_symbols = kwargs.get("dynamic_symbols", [])
+
+        # Get cached kernel when available.
+        wave_cache = get_cache_manager()
+        cached_kernel = wave_cache.get_kernel(
+            self.constraints, self._f, IndexingContext.current().subs, dynamic_symbols
+        )
+        if cached_kernel and run:
+            invoke_cached_kernel(cached_kernel)
+            return cached_kernel
+
+        # Recompile from kernel scratch if not found in cache.
         (
             mb,
             graph,
@@ -372,12 +388,8 @@ class LaunchableWave(Launchable):
             entrypoint_name,
         ) = self._trace_and_get_kernel_signature(args, kwargs)
 
-        run = kwargs.get("run", False)
-        run_bench = kwargs.get("run_bench", False)
-        create_vmfb_file = kwargs.get("create_vmfb_file", None)
         if run or run_bench or create_vmfb_file:
             # TODO: cache compiled code
-            dynamic_symbols = kwargs.get("dynamic_symbols", [])
             host_codegen.isolated_test_call(
                 mb, exe, kernel_sig, entrypoint_name, dynamic_symbols
             )

@@ -41,6 +41,7 @@ from .assumptions import Assumption
 import torch.fx as fx
 import iree.turbine.kernel.lang as tkl
 from pathlib import Path
+from .cache import get_cache_manager
 
 
 import tempfile
@@ -503,6 +504,7 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
         else:
             raise ValueError(f"Unsupported dynamic dim type: {type(dynamic_dim)}")
 
+    breakpoint()
     vm_context.invoke(entry_function, arg_list, ret_list)
 
 
@@ -549,6 +551,10 @@ def compile_and_invoke(
     create_vmfb_file: Optional[Path] = None,
     inplace: bool = False,
 ):
+
+    config["backend"] = "rocm"
+    config["target"] = "gfx942"
+
     backend = config["backend"]
     device = config["device"]
     flags = [
