@@ -351,6 +351,7 @@ class LaunchableWave(Launchable):
         return mb, graph, exe, kernel_sig, entrypoint_name
 
     def test_execute(self, args, kwargs):
+        breakpoint()
         (
             mb,
             graph,
