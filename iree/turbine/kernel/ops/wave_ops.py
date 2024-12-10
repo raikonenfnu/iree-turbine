@@ -588,6 +588,14 @@ class CustomOp(ABC):
         """
         return index
 
+    def backward_index(
+        self, index: dict[IndexSymbol, IndexSequence]
+    ) -> dict[IndexSymbol, IndexSequence]:
+        """
+        Transform the index of the node based on the provided mapping.
+        """
+        return index
+
 
 @define_py_op(operator.add)
 @define_py_op(operator.sub)
@@ -1423,6 +1431,19 @@ class ReduceOp(CustomOp, ABC):
     @property
     def reduction_dim(self) -> IndexSymbol:
         return self.dim
+
+    def transform_index(
+        self, index: dict[IndexSymbol, IndexSequence]
+    ) -> dict[IndexSymbol, IndexSequence]:
+        """
+        Transform the index of the node based on the provided mapping.
+        """
+        reduced_index = copy.deepcopy(index)
+        try:
+            reduced_index[self.dim].size = 1
+        except:
+            breakpoint()
+        return reduced_index
 
 
 # TODO: Add support for more shuffle types.

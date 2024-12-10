@@ -16,6 +16,7 @@ from ..ops.wave_ops import (
     IterArg,
     CustomOp,
     Reshape,
+    ReduceOp,
 )
 from .constraints import Constraint, HardwareConstraint, WorkgroupConstraint
 from .assumptions import Assumption
@@ -497,8 +498,8 @@ def combine_indices(
 def add_nodes_to_sources(
     source: CustomOp,
     reduction: Reduction,
-    fn: Callable,
     source_index: dict[IndexSymbol, IndexSequence],
+    bwd_index: dict[IndexSymbol, IndexSequence],
     source_vector_shapes: dict[IndexSymbol, int],
     sources: list[
         tuple[CustomOp, dict[IndexSymbol, IndexSequence], dict[IndexSymbol, int]]
@@ -507,20 +508,22 @@ def add_nodes_to_sources(
     """
     Populate the sources with the inputs and users of the source node.
     """
-    for args, reduction in [fn(source.fx_node, reduction)]:
-        logger.debug(f"{source.fx_node} -> {args}")
-        if not args:
-            break
-        for arg in args:
-            custom = get_custom(arg)
-            if isinstance(custom, (Allocate, Placeholder)) and not isinstance(
-                custom, IterArg
-            ):
-                continue
-            vector_shapes = (
-                custom.vector_shapes if custom.vector_shapes else source_vector_shapes
-            )
-            sources.append((custom, source_index, vector_shapes))
+    for func in [get_inputs, get_users]:
+        for args, reduction in [func(source.fx_node, reduction)]:
+            logger.debug(f"{source.fx_node} -> {args}")
+            if not args:
+                break
+            for arg in args:
+                custom = get_custom(arg)
+                if isinstance(custom, (Allocate, Placeholder)) and not isinstance(
+                    custom, IterArg
+                ):
+                    continue
+                vector_shapes = (
+                    custom.vector_shapes if custom.vector_shapes else source_vector_shapes
+                )
+                target_index = deepcopy(source_index if func == get_users else bwd_index)
+                sources.append((custom, target_index, vector_shapes))
     return sources, reduction
 
 
@@ -572,19 +575,19 @@ def propagate_index(
         if not isinstance(source, (Reduction, MMA)):
             if not should_update_index(source, source_index, source_vector_shapes):
                 continue
+            bwd_index = source.backward_index(source_index)
             source_index = source.transform_index(source_index)
             source.index = combine_indices(source.index, source_index)
             source.vector_shapes = source_vector_shapes
         visited.add(source)
-        for func in [get_inputs, get_users]:
-            sources, reduction = add_nodes_to_sources(
-                source,
-                reduction,
-                func,
-                source_index,
-                source_vector_shapes,
-                sources,
-            )
+        sources, reduction = add_nodes_to_sources(
+            source,
+            reduction,
+            source_index,
+            bwd_index,
+            source_vector_shapes,
+            sources,
+        )
     return visited
 
 
