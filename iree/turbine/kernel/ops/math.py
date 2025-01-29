@@ -20,5 +20,5 @@ def exp2(val):
 
 
 @define_op
-def vector_constant(shape: Tuple[int, ...], dtype, value: int | float) -> "Vector":
+def vector_constant(shape: Tuple[int, ...], dtype, value: "Scalar") -> "Vector":
     ...

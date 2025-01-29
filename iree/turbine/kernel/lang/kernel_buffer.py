@@ -56,7 +56,7 @@ class MemoryLayout:
     its physical shape.
     """
 
-    shape: tuple[int | IndexExpr]
+    shape: tuple[IndexExpr]
 
 
 class KernelBufferMeta(ShapedDataType):
@@ -65,12 +65,12 @@ class KernelBufferMeta(ShapedDataType):
     def new_subtype(
         cls: Type[SubtypeT],
         *,
-        name: str | None = None,
-        address_space: AddressSpace | None = None,
-        symbolic_shape: tuple[IndexExpr, ...] | None = None,
-        dtype: DataType | None = None,
-        physical_layout: MemoryLayout | None = None,
-        usage: KernelBufferUsage | None = None,
+        name: str = None,
+        address_space: AddressSpace = None,
+        symbolic_shape: tuple[IndexExpr, ...] = None,
+        dtype: DataType = None,
+        physical_layout: MemoryLayout = None,
+        usage: KernelBufferUsage = None,
     ) -> Type[SubtypeT]:
         init_address_space = (
             address_space if address_space else AddressSpace.GLOBAL_MEMORY
@@ -124,7 +124,7 @@ class KernelBuffer(metaclass=KernelBufferMeta):
         self._tensor = tensor
 
     def __class_getitem__(
-        cls, shape_and_dtype: tuple[IndexExpr | DataType, ...]
+        cls, shape_and_dtype: tuple[IndexExpr, ...]
     ) -> Type["KernelBuffer"]:
         """Syntax: `KernelBuffer[shape1, shape2, ..., shapeN, dtype]`"""
 

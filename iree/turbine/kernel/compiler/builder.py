@@ -136,7 +136,7 @@ class _ScalarBuilder:
             )
         return IRProxyValue(handler(value.ir_value, to_type))
 
-    def constant_attr(self, val: int | float, element_type: IrType) -> Attribute:
+    def constant_attr(self, val: float, element_type: IrType) -> Attribute:
         if self.is_integer_type(element_type) or self.is_index_type(element_type):
             if not isinstance(val, int):
                 raise TypeError(f"Expected an integer value, got {val}")

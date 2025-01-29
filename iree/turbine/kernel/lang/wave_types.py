@@ -5,7 +5,6 @@ from typing import (
     Iterable,
     Optional,
     Type,
-    TypeAlias,
     TypeVar,
     Sequence,
 )
@@ -66,7 +65,7 @@ class Memory(metaclass=KernelBufferMeta):
         raise NotImplementedError("Memory types are not directly instantiated.")
 
     def __class_getitem__(
-        cls, shape_and_dtype: tuple[IndexExpr | DataType, ...]
+        cls, shape_and_dtype: tuple[IndexExpr, ...]
     ) -> Type["Memory"]:
         """Syntax: `Memory[shape1, ...., shapeN, addressSpace, dtype, Optional[usage]]"""
         if len(shape_and_dtype) < 3:
@@ -128,7 +127,7 @@ class Register(metaclass=KernelBufferMeta):
         return register(cls.symbolic_shape, cls.dtype, value)
 
     def __class_getitem__(
-        cls, shape_and_dtype: tuple[IndexExpr | DataType, ...]
+        cls, shape_and_dtype: tuple[IndexExpr, ...]
     ) -> Type["Register"]:
 
         if len(shape_and_dtype) < 2:
@@ -151,7 +150,7 @@ class Register(metaclass=KernelBufferMeta):
         )
 
 
-SymbolsMap: TypeAlias = dict[IndexSymbol, IndexExpr]
+SymbolsMap = dict[IndexSymbol, IndexExpr]
 
 
 def _subs_expr(expr: Any, subs: Iterable[tuple[IndexExpr, IndexExpr]]) -> Any:
@@ -198,7 +197,7 @@ class IndexMapping:
         num_iterators: int,
         inputs: SymbolsMap,
         outputs: SymbolsMap,
-        dynamic_val_mappings: SymbolsMap | Sequence[SymbolsMap] = (),
+        dynamic_val_mappings: Sequence[SymbolsMap] = (),
     ) -> None:
         iters = {self.iterator(i): i for i in range(num_iterators)}
         iter_shape = [None] * num_iterators

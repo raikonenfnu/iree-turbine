@@ -319,9 +319,7 @@ class CompiledContext(BaseContext):
             kwargs={},
         )
 
-    def handle_vector_constant(
-        self, op, shape: Tuple[int, ...], dtype, value: int | float
-    ):
+    def handle_vector_constant(self, op, shape: Tuple[int, ...], dtype, value: float):
         return self.region_graph.create_proxy(
             "call_function",
             target=op,

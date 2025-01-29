@@ -80,11 +80,11 @@ class BindingType(Enum):
     SYMBOL_VALUE = 2
 
 
-def _is_symbolic(value: list[sympy.Expr | int]) -> bool:
+def _is_symbolic(value: list[sympy.Expr]) -> bool:
     return any(isinstance(v, sympy.Expr) for v in value)
 
 
-def _get_mixed_stride(stride: list[sympy.Expr | int]) -> str:
+def _get_mixed_stride(stride: list[sympy.Expr]) -> str:
     asm = ",".join(["?" if isinstance(s, sympy.Expr) else str(s) for s in stride])
     return "[" + asm + "]"
 

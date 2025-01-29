@@ -74,7 +74,7 @@ Dims = list[Union[None, IndexSymbol, int]]
 ###############################################################################
 
 
-@dataclass(slots=True)
+@dataclass
 class _ShapedBinding:
     # The instance of shaped_type. Can be anything. We resolve dimension values
     # against this.
@@ -237,10 +237,10 @@ class IndexingContext:
         except TypeError:
             return None
 
-    def simplify_expr(self, expr: IndexExpr | int) -> IndexExpr:
+    def simplify_expr(self, expr: IndexExpr) -> IndexExpr:
         return sympy.sympify(expr).subs(self.frozen_subs).simplify()
 
-    def get_static_value(self, expr: IndexExpr | int) -> Optional[int]:
+    def get_static_value(self, expr: IndexExpr) -> Optional[int]:
         expr = self.simplify_expr(expr)
         try:
             return int(expr)
@@ -406,14 +406,12 @@ def backed_sym_index_type(assumption: IndexRelation) -> Type[SymIndex]:
 
 @dataclass
 class IndexSequence:
-    start: IndexExpr | int
-    size: IndexExpr | int
-    stride: Optional[IndexExpr | int] = 1
+    start: IndexExpr
+    size: IndexExpr
+    stride: Optional[int] = 1
 
     @staticmethod
-    def _subs(
-        value: int | IndexExpr, map: dict[IndexExpr, IndexExpr]
-    ) -> int | IndexExpr:
+    def _subs(value: IndexExpr, map: dict[IndexExpr, IndexExpr]) -> IndexExpr:
         if isinstance(value, (sympy.Basic, IndexSequence)):
             return value.subs(map)
         return value

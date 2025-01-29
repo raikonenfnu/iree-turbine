@@ -26,9 +26,7 @@ class Grid(metaclass=ShapedType):
         else:
             self.dims = []
 
-    def __class_getitem__(
-        cls, symbolic_shape: tuple[IndexExpr, ...] | IndexExpr
-    ) -> Type["Grid"]:
+    def __class_getitem__(cls, symbolic_shape: tuple[IndexExpr, ...]) -> Type["Grid"]:
         if not isinstance(symbolic_shape, tuple):
             symbolic_shape = (symbolic_shape,)
 
