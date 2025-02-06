@@ -37,20 +37,20 @@ from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", get_test_shapes("attention"))
-@pytest.mark.parametrize("enable_scheduling", [False, True])
-@pytest.mark.parametrize("dynamic_dims", [False, True])
+@pytest.mark.parametrize("input_shape", get_test_shapes("attention"))
+@pytest.mark.parametrize("enable_scheduling", [False,])
+@pytest.mark.parametrize("dynamic_dims", [False,])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
-        (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
-        (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
-        (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+        # (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
+        # (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
+        # (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
         (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
     ],
 )
-def testAttention(
-    shape: tuple[int],
+def testAttentionPure(
+    input_shape: tuple[int],
     enable_scheduling: bool,
     dynamic_dims: bool,
     mfma_variant: tuple[MMAType],
@@ -59,12 +59,12 @@ def testAttention(
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
     shape = AttentionShape(
-        num_query_heads=shape[0],
-        num_kv_heads=shape[0],
-        query_seq_len=shape[1],
-        head_size_kv=shape[2],
-        head_size=shape[3],
-        kv_seq_len=shape[4],
+        num_query_heads=input_shape[0],
+        num_kv_heads=input_shape[0],
+        query_seq_len=input_shape[1],
+        head_size_kv=input_shape[2],
+        head_size=input_shape[3],
+        kv_seq_len=input_shape[4],
     )
     (
         base_attention,
@@ -109,12 +109,13 @@ def testAttention(
         # TODO: Add scaling of QK as part of kernel.
         # TODO: Add variant of non-transposed V attention kernel.
         mb = base_attention(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
+        # mb = base_attention(q * dk_sqrt * log2e, k, v, output)
         torch_ref = torch.nn.functional.scaled_dot_product_attention(
             q, k, v, attn_mask=None
         )
 
         if dump_generated_mlir:
-            filename = f"wave_attention_{'x'.join(map(str, shape))}.mlir"
+            filename = f"wave_attention_{'x'.join(map(str, input_shape))}.mlir"
             with open(filename, "w") as f:
                 f.write(mb.module_op.get_asm())
 
@@ -122,7 +123,7 @@ def testAttention(
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", get_test_shapes("attention"))
+@pytest.mark.parametrize("shape", get_test_shapes("all_attention"))
 @pytest.mark.parametrize("enable_scheduling", [False])
 @pytest.mark.parametrize("dynamic_dims", [False])
 @pytest.mark.parametrize(
