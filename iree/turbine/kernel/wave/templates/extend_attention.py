@@ -33,6 +33,7 @@ def get_extend_attention_kernel(
     output_dtype: Optional[torch.dtype] = torch.float32,
     size_dtype: Optional[torch.dtype] = torch.int32,
     is_causal: Optional[bool] = False,
+    sm_scale: Optional[bool] = None,
     logit_cap: Optional[float] = 0.0,
 ):
     # Determine dtype of operands.
@@ -68,6 +69,7 @@ def get_extend_attention_kernel(
     M_WAVES = 4
     N_WAVES = 1
     LOG2E = 1.44269504089
+    sm_scale = (sm_scale or math.sqrt(1.0 / shape.head_size)) * LOG2E
     logit_cap *= LOG2E
 
     constraints: list[tkw.Constraint] = []
@@ -103,6 +105,7 @@ def get_extend_attention_kernel(
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
     k = tkw.IndexMapping.iterator(2)
+    d0 = tkw.IndexMapping.dynamic_val(0)
 
     mapping = tkw.IndexMapping(
         num_iterators=3,
@@ -124,8 +127,9 @@ def get_extend_attention_kernel(
     )
     k_cache_mapping = tkw.IndexMapping(
         num_iterators=3,
-        inputs={H_KV: i // head_ratio, N_KV: j + SEQ_IDX, D_Q: k},
+        inputs={H_KV: i // head_ratio, N_KV: d0, D_Q: k},
         outputs={H_KV: i, N_KV: j, D_Q: k},
+        dynamic_val_mappings={N_KV: j},
     )
 
     v_mapping = tkw.IndexMapping(
@@ -136,14 +140,15 @@ def get_extend_attention_kernel(
 
     v_cache_mapping = tkw.IndexMapping(
         num_iterators=3,
-        inputs={H_KV: i // head_ratio, D_KV: j, N_KV: k + SEQ_IDX},
+        inputs={H_KV: i // head_ratio, D_KV: j, N_KV: d0},
         outputs={H_KV: i, D_KV: j, N_KV: k},
+        dynamic_val_mappings={N_KV: k},
     )
 
     block_table_mapping = tkw.IndexMapping(
-        num_iterators=2,
-        inputs={S: REQ_IDX, N_KV: j},
-        outputs={S: i, N_KV: j},
+        num_iterators=1,
+        inputs={S: REQ_IDX, N_KV: i},
+        outputs={N_KV: i},
     )
 
     # Set the dynamic shapes for the kernel. Here we set it to N_Q
@@ -182,6 +187,7 @@ def get_extend_attention_kernel(
         init_max = tkl.Register[H, N_Q, tkl.f32](-1e6)
         zero = tkl.Register[N_Q, N_KV, tkl.f32](0.0)
         neg_infinity = tkl.Register[N_Q, N_KV, tkl.f32](-1e6)
+        sm_scale_reg = tkl.Register[H, N_Q, N_KV, tkl.f32](sm_scale)
         if logit_cap > 0:
             logit_cap_reg = tkl.Register[H, N_Q, N_KV, tkl.f32](logit_cap)
 
@@ -196,12 +202,6 @@ def get_extend_attention_kernel(
         seq_len_prefix = seq_len - seq_len_extend
 
         tkw.set_symbol(N_KV, seq_len_prefix)
-        block_indices = tkw.read(
-            block_table,
-            elements_per_thread=1,
-            mapping=block_table_mapping,
-        )
-        tkw.set_symbol(SEQ_IDX, block_indices)
 
         @tkw.reduction(N_KV, init_args=[init_max, init_sum, c_reg])
         def first_loop(
@@ -214,14 +214,26 @@ def get_extend_attention_kernel(
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
                 mapping=q_mapping,
             )
+            block_indices_v = tkw.read(
+                block_table,
+                elements_per_thread=LOAD_ELEMS_PER_THREAD_PV,
+                mapping=block_table_mapping,
+            )
+            block_indices_k = tkw.read(
+                block_table,
+                elements_per_thread=1,
+                mapping=block_table_mapping,
+            )
             k_reg = tkw.read(
                 k_cache,
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
                 mapping=k_cache_mapping,
+                mapping_dynamic_vals=(block_indices_k,),
             )
             imm_reg = tkl.Register[H, N_KV, N_Q, tkl.f32](0.0)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[H, N_Q, N_KV])
+            x_j = x_j * sm_scale_reg
             if logit_cap > 0:
                 x_j = logit_cap_reg * tkw.tanh(x_j / logit_cap_reg)
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
@@ -240,6 +252,7 @@ def get_extend_attention_kernel(
                 v_cache,
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_PV,
                 mapping=v_cache_mapping,
+                mapping_dynamic_vals=(block_indices_v,),
             )
             new_acc = acc * e_delta_max
             acc = tkw.mma(v_reg, imm_f16, new_acc)
@@ -268,6 +281,7 @@ def get_extend_attention_kernel(
             )
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[H, N_Q, N_KV])
+            x_j = x_j * sm_scale_reg
             if logit_cap > 0:
                 x_j = logit_cap_reg * tkw.tanh(x_j / logit_cap_reg)
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
