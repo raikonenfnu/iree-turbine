@@ -1,4 +1,4 @@
-from typing import Type, TypeVar, cast, ClassVar
+from typing import Type, TypeVar, cast, ClassVar, Optional
 
 from enum import Enum
 from dataclasses import dataclass
@@ -53,10 +53,11 @@ class KernelBufferUsage(Enum):
 class MemoryLayout:
     """
     Specifies the physical layout of a memory buffer in terms of
-    its physical shape.
+    its physical shape and optionally strides.
     """
 
     shape: tuple[int | IndexExpr]
+    stride: Optional[tuple[int | IndexExpr]] = None
 
 
 class KernelBufferMeta(ShapedDataType):

@@ -131,15 +131,21 @@ class BindingDesc:
                 spec_asm = element_type_asm
             ref_type = self.reference[1].type
             # If a physical layout is present, use it to determine the shape and strides.
+            strides = None
             if ref_type.physical_layout:
                 shape_asm = "x".join(
                     sym_to_dim_asm(s) for s in ref_type.physical_layout.shape
                 )
                 spec_asm = f"{shape_asm}x{element_type_asm}"
                 symbolic_shape = ref_type.physical_layout.shape
-            strides = strides_from_symbolic_shape(
-                idx_context, symbolic_shape, allow_mixed_shapes=True
-            )
+                if ref_type.physical_layout.stride:
+                    strides = [idx_context.get_static_value(s) for s in ref_type.physical_layout.stride]
+
+            if not strides:
+                strides = strides_from_symbolic_shape(
+                    idx_context, symbolic_shape, allow_mixed_shapes=True
+                )
+
             if strides is None:
                 memref_asm = f"memref<{spec_asm}>"
             elif _is_symbolic(strides):
@@ -147,6 +153,7 @@ class BindingDesc:
                 memref_asm = f"memref<{spec_asm}, strided<{strides}, offset: ?>>"
             else:
                 memref_asm = f"memref<{spec_asm}, strided<{strides}, offset: ?>>"
+
             return IrType.parse(memref_asm)
         elif binding_type == BindingType.INDEX_VALUE:
             return IndexType.get()

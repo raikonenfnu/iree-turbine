@@ -60,6 +60,7 @@ def context_attention_fwd(
     b_seq_len: torch.Tensor,
     max_len_in_batch: int,
     is_causal: bool = False,
+    logit_cap: float = 0.0,
 ):
     cu_seq_lens = [0] * (len(b_seq_len) + 1)
     for i, seq_len in enumerate(b_seq_len):
@@ -92,6 +93,7 @@ def ref_extend_attn(
     extend_token_num: int,
     dtype: torch.dtype,
     is_causal: bool = False,
+    logit_cap: float = 0.0,
 ) -> torch.Tensor:
     total_token_num = k_buffer.shape[0]
     B, H_Q, D = b_req_idx.shape[0], q_extend.shape[-2], q_extend.shape[-1]
@@ -117,6 +119,7 @@ def ref_extend_attn(
         b_seq_len,
         max_len_in_batch,
         is_causal,
+        logit_cap = logit_cap,
     )
 
     pt = 0
@@ -140,20 +143,13 @@ def create_inputs(
     H_KV = shape.num_kv_heads
     H_Q = shape.num_query_heads
     D = shape.head_size
-    # TODO: Enable when we have proper masking for attention.
-    # b_seq_len_prefix = torch.randint(
-    #     1, N_CTX // 2, (B,), dtype=torch.int32, device="cuda"
-    # )
-    b_seq_len_prefix = torch.empty((B,), dtype=torch.int32, device="cuda")
-    for i in range(B):
-        b_seq_len_prefix[i] = shape.block_size * (i + 1)
-    # TODO: Enable when we have proper masking for attention.
-    # b_seq_len_extend = torch.randint(
-    #     1, N_CTX // 2, (B,), dtype=torch.int32, device="cuda"
-    # )
-    b_seq_len_extend = torch.empty((B,), dtype=torch.int32, device="cuda")
-    for i in range(B):
-        b_seq_len_extend[i] = shape.block_size * (i + 2)
+    torch.manual_seed(0)
+    b_seq_len_prefix = torch.randint(
+        1, N_CTX // 2, (B,), dtype=torch.int32, device="cuda"
+    )
+    b_seq_len_extend = torch.randint(
+        1, N_CTX // 2, (B,), dtype=torch.int32, device="cuda"
+    )
     b_seq_len = b_seq_len_prefix + b_seq_len_extend
     max_len_in_batch = torch.max(b_seq_len, 0)[0].item()
 
@@ -199,6 +195,7 @@ def create_inputs(
     b_start_loc_extend = torch.zeros_like(b_seq_len)
     b_start_loc_extend[1:] = torch.cumsum(b_seq_len_extend[:-1], 0)
     max_len_extend = torch.max(b_seq_len_extend, 0)[0].item()
+    logit_cap = 30.0
 
     return (
         q_extend,
@@ -216,6 +213,7 @@ def create_inputs(
         max_len_in_batch,
         extend_token_num,
         max_len_extend,
+        logit_cap,
     )
 
 
@@ -257,6 +255,7 @@ def testExtendAttention(
         max_len_in_batch,
         extend_token_num,
         max_len_extend,
+        logit_cap,
     ) = create_inputs(shape, dtype)
     shape.max_seq_len = max_len_extend
 
@@ -280,6 +279,7 @@ def testExtendAttention(
         v_buffer.shape,
         output.shape,
         is_causal=is_causal,
+        logit_cap=logit_cap,
     )
     hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
@@ -342,6 +342,7 @@ def testExtendAttention(
         extend_token_num=extend_token_num,
         dtype=dtype,
         is_causal=is_causal,
+        logit_cap=logit_cap,
     )
 
     assert_allclose(output, ref_output, rtol=1e-3, atol=1e-3)

@@ -11,7 +11,7 @@ from iree.turbine.kernel.wave.constraints import MMAType
 from iree.turbine.kernel.wave.utils import (
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
-    torch_dtype_to_wave,
+    torch_dtype_to_wave,    
 )
 from .attention_common import *
 import math
@@ -33,6 +33,7 @@ def get_extend_attention_kernel(
     output_dtype: Optional[torch.dtype] = torch.float32,
     size_dtype: Optional[torch.dtype] = torch.int32,
     is_causal: Optional[bool] = False,
+    logit_cap: Optional[float] = 0.0,
 ):
     # Determine dtype of operands.
     wave_input_dtype = torch_dtype_to_wave(input_dtype)
@@ -66,6 +67,8 @@ def get_extend_attention_kernel(
     SEQ_TILE_SIZE = shape.block_size
     M_WAVES = 4
     N_WAVES = 1
+    LOG2E = 1.44269504089
+    logit_cap *= LOG2E
 
     constraints: list[tkw.Constraint] = []
     constraints += [
@@ -119,7 +122,6 @@ def get_extend_attention_kernel(
         inputs={H_KV: i // head_ratio, N_KV: j + EXT_IDX, D_Q: k},
         outputs={H_KV: i, N_KV: j, D_Q: k},
     )
-    # TODO: Need to add SEQ_IDX below
     k_cache_mapping = tkw.IndexMapping(
         num_iterators=3,
         inputs={H_KV: i // head_ratio, N_KV: j + SEQ_IDX, D_Q: k},
@@ -181,9 +183,10 @@ def get_extend_attention_kernel(
         c_reg = tkl.Register[H, D_KV, N_Q, tkl.f32](0.0)
         init_sum = tkl.Register[H, N_Q, tkl.f32](0.0)
         init_max = tkl.Register[H, N_Q, tkl.f32](-1e6)
-        if is_causal:
-            zero = tkl.Register[N_Q, N_KV, tkl.f32](0.0)
-            neg_infinity = tkl.Register[N_Q, N_KV, tkl.f32](-1e6)
+        zero = tkl.Register[N_Q, N_KV, tkl.f32](0.0)
+        neg_infinity = tkl.Register[N_Q, N_KV, tkl.f32](-1e6)
+        if logit_cap > 0:
+            logit_cap_reg = tkl.Register[H, N_Q, N_KV, tkl.f32](logit_cap)
 
         req_idx = tkw.read(request_indices, elements_per_thread=1)
         tkw.set_symbol(REQ_IDX, req_idx)
@@ -222,6 +225,14 @@ def get_extend_attention_kernel(
             imm_reg = tkl.Register[H, N_KV, N_Q, tkl.f32](0.0)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[H, N_Q, N_KV])
+            if logit_cap > 0:
+                x_j = logit_cap_reg * tkw.tanh(x_j / logit_cap_reg)
+            n_kv_index = tkw.self_index(N_KV, tkl.i32)
+            mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
+            mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
+            mask = tkw.cast(mask, tkw.i1)
+            bias = tkw.select(mask, zero, neg_infinity)
+            x_j = x_j + bias
             m_j = tkw.max(x_j, partial_max, dim=N_KV)
             e_delta_max = tkw.exp2(partial_max - m_j)
             e_delta = tkw.exp2(x_j - m_j)
@@ -260,12 +271,18 @@ def get_extend_attention_kernel(
             )
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[H, N_Q, N_KV])
+            if logit_cap > 0:
+                x_j = logit_cap_reg * tkw.tanh(x_j / logit_cap_reg)
+            n_kv_index = tkw.self_index(N_KV, tkl.i32)
+            mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
+            mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
             if is_causal:
                 n_q_index = tkw.self_index(N_Q, tkl.i32)
                 n_q_index = tkw.broadcast(n_q_index, target_shape=[N_Q, N_KV])
-                n_kv_index = tkw.self_index(N_KV, tkl.i32)
-                bias = tkw.select(n_q_index >= n_kv_index, zero, neg_infinity)
-                x_j = x_j + bias
+                mask = (n_q_index >= n_kv_index) & mask
+            mask = tkw.cast(mask, tkw.i1)
+            bias = tkw.select(mask, zero, neg_infinity)
+            x_j = x_j + bias
             m_j = tkw.max(x_j, partial_max, dim=N_KV)
             e_delta_max = tkw.exp2(partial_max - m_j)
             e_delta = tkw.exp2(x_j - m_j)
@@ -297,13 +314,12 @@ def get_extend_attention_kernel(
         BLOCK_H: 1,
         BLOCK_N_Q: SEQ_TILE_SIZE,
         BLOCK_D_KV: SEQ_TILE_SIZE,
-        BLOCK_N_KV: SEQ_TILE_SIZE,
+        BLOCK_N_KV: SEQ_TILE_SIZE // 4,
         BLOCK_S: 1,
         H: shape.num_query_heads,
         H_KV: shape.num_kv_heads,
         D_KV: shape.head_size_kv,
         D_Q: shape.head_size,
-        S: shape.num_seqs,
     }
 
     dynamic_symbols = [N_Q, N_KV]
