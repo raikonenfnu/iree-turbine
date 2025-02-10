@@ -326,7 +326,7 @@ def testExtendAttention(
         # TODO: Add scaling of QK as part of kernel.
         # TODO: Add variant of non-transposed V attention kernel.
         mb_qk = extend_attention(
-            q_extend * dk_sqrt * log2e,
+            q_extend,
             k_extend,
             v_extend,
             k_buffer,

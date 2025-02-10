@@ -336,7 +336,6 @@ def get_extend_attention_kernel(
         H_KV: shape.num_kv_heads,
         D_KV: shape.head_size_kv,
         D_Q: shape.head_size,
-        S: shape.num_seqs,
     }
 
     dynamic_symbols = [N_Q, N_KV, S]
