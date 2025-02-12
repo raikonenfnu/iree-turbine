@@ -71,6 +71,9 @@ from .._support.tracing import (
 from .cache import is_cache_enabled, get_cache_manager, invoke_cached_kernel
 
 import sympy
+import logging
+import torch
+from sglang.srt.layers.dp_attention import get_attention_tp_rank
 
 __all__ = ["wave", "wave_trace_only"]
 
@@ -526,6 +529,16 @@ class LaunchableWave(Launchable):
                 run_bench=run_bench,
             )
             cached_kernel = cache_manager.load_kernel(kernel_hash)
+            config["dump_intermediates"] = "./inter"
+            import logging
+            import torch
+            from sglang.srt.layers.dp_attention import get_attention_tp_rank
+            #tp_rank = get_attention_tp_rank()
+            tp_rank = 0
+            if tp_rank == 0:
+                free_start, total = torch.cuda.mem_get_info('cuda')
+                # print(f"Before invoke_cached_kernel usage: {total - free_start}")
+                print(f"Before invoke_cached_kernel usage: {total - free_start}")
             if cached_kernel and (run or run_bench):
                 invoke_cached_kernel(
                     cached_kernel,
@@ -536,6 +549,10 @@ class LaunchableWave(Launchable):
                     run,
                     run_bench,
                 )
+                if tp_rank == 0:
+                    free_end, _ = torch.cuda.mem_get_info('cuda')
+                    print(f"After invoke_cached_kernel usage: {total - free_end}")
+                    print(f"Wave launch usage: {free_start - free_end}")
                 return cached_kernel
 
         # Recompile kernel from scratch if not found in cache.
@@ -580,6 +597,16 @@ class LaunchableWave(Launchable):
                 for binding in kernel_sig.kernel_buffer_bindings
             ]
 
+            config["dump_intermediates"] = "./inter"
+            import logging
+            import torch
+            from sglang.srt.layers.dp_attention import get_attention_tp_rank
+            #tp_rank = get_attention_tp_rank()
+            tp_rank = 0
+            if tp_rank == 0:
+                free_start, total = torch.cuda.mem_get_info('cuda')
+                print(f"Before cache_manager usage: {total - free_start}")
+
             if cache_enabled:
                 cache_manager.store_kernel(
                     compiled_wave_vmfb,
@@ -587,7 +614,21 @@ class LaunchableWave(Launchable):
                     mb.module_op.get_asm(),
                     kernel_hash,
                 )
-
+            if tp_rank == 0:
+                free_end, _ = torch.cuda.mem_get_info('cuda')
+                print(f"After cache_manager usage: {total - free_end}")
+                print(f"Wave launch usage: {free_start - free_end}")
+            
+            config["dump_intermediates"] = "./inter"
+            import logging
+            import torch
+            from sglang.srt.layers.dp_attention import get_attention_tp_rank
+            #tp_rank = get_attention_tp_rank()
+            tp_rank = 0
+            if tp_rank == 0:
+                free_start, total = torch.cuda.mem_get_info('cuda')
+                print(f"Before invoke_vmfb usage: {total - free_start}")
+            
             invoke_vmfb(
                 compiled_wave_vmfb,
                 "isolated_benchmark",
@@ -599,7 +640,11 @@ class LaunchableWave(Launchable):
                 run_bench,
                 inplace=True,
             )
-
+            if tp_rank == 0:
+                free_end, _ = torch.cuda.mem_get_info('cuda')
+                print(f"After invoke_vmfb usage: {total - free_end}")
+                print(f"Wave launch usage: {free_start - free_end}")
+            return cached_kernel
         return mb
 
     def aot_execute(self, args, kwargs):

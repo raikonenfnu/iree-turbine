@@ -495,6 +495,9 @@ def _invoke(vm_context, device, entry_function, inputs, outputs, dynamic_dims):
 
     for input in inputs:
         if isinstance(input, torch.Tensor):
+            import logging
+            logging.info(f"WAVEZ logging: Making things contiguous!!!!!")
+            print(f"WAVEZ: Making things contiguous!!! {input.shape}")
             input_cpu = input.cpu().contiguous()
             device_array = rt.asdevicearray(device, input_cpu)
             arg_list.push_ref(device_array._buffer_view)
