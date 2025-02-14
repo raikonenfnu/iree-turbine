@@ -104,14 +104,13 @@ def identify_optimizable_loads(
             continue
 
         # TODO: We need to properly update index/elements_per_thread on dependent reads.
-        if len(custom.mapping_dynamic_vals) > 0:
+        if is_transposed_read(custom) and len(custom.mapping_dynamic_vals) > 0:
             continue
 
         expanded_dynamic_vals = None
         if len(custom.mapping_dynamic_vals) > 0:
             expanded_dynamic_vals = set([get_custom(user).mapping_dynamic_vals for user in custom.memory.users.keys()])
             expanded_dynamic_vals = list(expanded_dynamic_vals)
-            # breakpoint()
 
         processed_memories.add(custom.memory)
         materialized_shape = materialize_shape(
@@ -133,6 +132,16 @@ def identify_optimizable_loads(
         optimizable_loads[custom.memory] = (expected_number_of_loads, custom, expanded_dynamic_vals)
     return optimizable_loads
 
+def update_index_dims(src_node: fx.Node, target_expr: IndexExpr):
+    """
+    Given src node and a dst index expression, if src node has dims that also exist in target_expr,
+    we copy the expression in target_expr into src node's index expression.
+    """
+    src_keys = set(src_node.index.keys())
+    target_keys = set(target_expr.keys())
+    intersection_keys = src_keys & target_keys
+    for intersect_key in intersection_keys:
+        src_node.index[intersect_key] = target_expr[intersect_key]
 
 def add_optimized_nodes(
     optimizable_loads: dict[fx.Node, tuple[int, Read]],
@@ -154,17 +163,10 @@ def add_optimized_nodes(
                 read = Read(memory, load_elems_per_thread, custom.mapping).add_to_graph(
                     custom.graph
                 )
-                if custom.mapping_dynamic_vals:
-                    get_custom(read).update_arg("mapping_dynamic_vals", expanded_dynamic_vals[i])
-                    global_offset = (
-                        hardware_constraint.linearized_thread_id * load_elems_per_thread
-                    )
-                else:
-                    global_offset = (
-                        hardware_constraint.linearized_thread_id * load_elems_per_thread
-                        + i * max_elements_per_load
-                    )
-
+                global_offset = (
+                    hardware_constraint.linearized_thread_id * load_elems_per_thread
+                    + i * max_elements_per_load
+                )
                 materialized_shape = materialize_shape(
                     constraint_tile_size, custom.type.symbolic_shape
                 )
@@ -175,19 +177,10 @@ def add_optimized_nodes(
                     materialized_shape,
                 )
                 if custom.mapping_dynamic_vals:
-                    global_offset = (
-                        hardware_constraint.linearized_thread_id * load_elems_per_thread
-                        + i * max_elements_per_load
-                    )
-                    write_index = construct_min_global_access_pattern(
-                        access_pattern,
-                        global_offset,
-                        load_elems_per_thread,
-                        materialized_shape,
-                    )
-                else:
-                    write_index = read.index
-
+                    # Update the dynamic vals' index expressions to match the min global access patterns.
+                    for dyn_val in expanded_dynamic_vals[i]:
+                        update_index_dims(dyn_val, read.index)
+                    get_custom(read).update_arg("mapping_dynamic_vals", expanded_dynamic_vals[i])
                 for custom_user in custom.users:
                     if (
                         isinstance(custom_user, Write)
@@ -196,7 +189,7 @@ def add_optimized_nodes(
                         write = Write(
                             read, custom_user.memory, load_elems_per_thread
                         ).add_to_graph(custom.graph)
-                        write.index = write_index
+                        write.index = read.index
                         optimized_writes[custom_user.memory].append(write)
                         write.vector_shapes = custom.vector_shapes
                         break

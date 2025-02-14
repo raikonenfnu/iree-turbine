@@ -200,7 +200,7 @@ def get_extend_attention_kernel(
         init_max = tkl.Register[H, N_Q, tkl.f32](-1e6)
         zero = tkl.Register[N_Q, N_KV, tkl.f32](0.0)
         neg_infinity = tkl.Register[N_Q, N_KV, tkl.f32](-1e6)
-        layer_scale_reg = tkl.Register[H, N_Q, N_KV, tkl.f32](layer_scaling)
+        layer_scale_reg = tkl.Register[N_Q, H, D_Q, tkl.f16](layer_scaling)
         if logit_cap > 0:
             logit_cap_reg = tkl.Register[H, N_Q, N_KV, tkl.f32](logit_cap)
 
@@ -243,12 +243,12 @@ def get_extend_attention_kernel(
                 mapping=k_cache_mapping,
                 mapping_dynamic_vals=(block_indices_k,),
             )
+            q_reg = q_reg * layer_scale_reg
             imm_reg = tkl.Register[H, N_KV, N_Q, tkl.f32](0.0)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[H, N_Q, N_KV])
-            x_j = x_j * layer_scale_reg
             if logit_cap > 0:
-                x_j = logit_cap_reg * tkw.tanh(x_j / logit_cap_reg)
+                x_j = logit_cap_reg * tkw.tanh(x_j * tkw.reciprocal(logit_cap_reg))
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
             mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
@@ -273,6 +273,11 @@ def get_extend_attention_kernel(
 
         res_max, res_sum, res_mm = first_loop
 
+        if is_causal:
+            seq_len_extend = tkw.apply_expr(
+                seq_len_extend,
+                lambda x: sympy.Min(x, (WORKGROUP_0 + 1) * BLOCK_N_Q),
+            )
         tkw.set_symbol(N_KV, seq_len_extend)
 
         @tkw.reduction(N_KV, init_args=[res_max, res_sum, res_mm])
@@ -292,11 +297,11 @@ def get_extend_attention_kernel(
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
                 mapping=k_mapping,
             )
+            q_reg = q_reg * layer_scale_reg
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[H, N_Q, N_KV])
-            x_j = x_j * layer_scale_reg
             if logit_cap > 0:
-                x_j = logit_cap_reg * tkw.tanh(x_j / logit_cap_reg)
+                x_j = logit_cap_reg * tkw.tanh(x_j * tkw.reciprocal(logit_cap_reg))
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
             mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
