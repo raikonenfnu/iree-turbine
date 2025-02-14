@@ -14,7 +14,7 @@ from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexingContext, IndexSequence, IndexSymbol, IndexExpr
 from ..ops.wave_ops import Read, Write, get_custom
 from ..lang.global_symbols import *
-from .utils import delinearize_index, DCE, subs_idxc, ceildiv
+from .utils import delinearize_index, DCE, subs_idxc, ceildiv, _get_fastest_index
 from math import prod
 import torch.fx as fx
 from collections import defaultdict
@@ -35,6 +35,19 @@ def is_valid_global_read(node: fx.Node) -> bool:
         and subs_idxc(custom.memory_type.address_space) == GLOBAL_ADDRESS_SPACE
         and has_write_shared_user(custom)
     )
+
+
+def is_transposed_read(custom: Read) -> bool:
+    """
+    Checks whether or not we are doing a transposed read.
+    Returns true if the fastest dim in register is not
+    the same as fastest dim in global memory.
+    """
+    assert isinstance(custom, Read) and "Expected input to be Read"
+    global_fastest_dim = get_custom(custom.memory).type.symbolic_shape[-1]
+    fastest_dim_idx = _get_fastest_index(custom.index)
+    register_fastest_dim = list(custom.index)[fastest_dim_idx]
+    return register_fastest_dim != global_fastest_dim
 
 
 def construct_min_global_access_pattern(
@@ -94,6 +107,12 @@ def identify_optimizable_loads(
         if len(custom.mapping_dynamic_vals) > 0:
             continue
 
+        expanded_dynamic_vals = None
+        if len(custom.mapping_dynamic_vals) > 0:
+            expanded_dynamic_vals = set([get_custom(user).mapping_dynamic_vals for user in custom.memory.users.keys()])
+            expanded_dynamic_vals = list(expanded_dynamic_vals)
+            # breakpoint()
+
         processed_memories.add(custom.memory)
         materialized_shape = materialize_shape(
             constraint_tile_size, custom.type.symbolic_shape
@@ -111,7 +130,7 @@ def identify_optimizable_loads(
         )
         if expected_number_of_loads >= actual_number_of_loads:
             continue
-        optimizable_loads[custom.memory] = (expected_number_of_loads, custom)
+        optimizable_loads[custom.memory] = (expected_number_of_loads, custom, expanded_dynamic_vals)
     return optimizable_loads
 
 
@@ -126,17 +145,26 @@ def add_optimized_nodes(
     Add optimized global read nodes and shared write nodes to the graph.
     """
     optimized_writes = defaultdict(list)
-    for memory, (expected_number_of_loads, custom) in optimizable_loads.items():
+    for memory, (expected_number_of_loads, custom, expanded_dynamic_vals) in optimizable_loads.items():
         access_pattern: dict[IndexSymbol, IndexSequence] = custom.index
+        if expanded_dynamic_vals:
+            assert len(expanded_dynamic_vals) == expected_number_of_loads
         for i in range(expected_number_of_loads):
             with custom.graph.inserting_before(custom.fx_node):
                 read = Read(memory, load_elems_per_thread, custom.mapping).add_to_graph(
                     custom.graph
                 )
-                global_offset = (
-                    hardware_constraint.linearized_thread_id * load_elems_per_thread
-                    + i * max_elements_per_load
-                )
+                if custom.mapping_dynamic_vals:
+                    get_custom(read).update_arg("mapping_dynamic_vals", expanded_dynamic_vals[i])
+                    global_offset = (
+                        hardware_constraint.linearized_thread_id * load_elems_per_thread
+                    )
+                else:
+                    global_offset = (
+                        hardware_constraint.linearized_thread_id * load_elems_per_thread
+                        + i * max_elements_per_load
+                    )
+
                 materialized_shape = materialize_shape(
                     constraint_tile_size, custom.type.symbolic_shape
                 )
@@ -146,6 +174,20 @@ def add_optimized_nodes(
                     load_elems_per_thread,
                     materialized_shape,
                 )
+                if custom.mapping_dynamic_vals:
+                    global_offset = (
+                        hardware_constraint.linearized_thread_id * load_elems_per_thread
+                        + i * max_elements_per_load
+                    )
+                    write_index = construct_min_global_access_pattern(
+                        access_pattern,
+                        global_offset,
+                        load_elems_per_thread,
+                        materialized_shape,
+                    )
+                else:
+                    write_index = read.index
+
                 for custom_user in custom.users:
                     if (
                         isinstance(custom_user, Write)
@@ -154,7 +196,7 @@ def add_optimized_nodes(
                         write = Write(
                             read, custom_user.memory, load_elems_per_thread
                         ).add_to_graph(custom.graph)
-                        write.index = read.index
+                        write.index = write_index
                         optimized_writes[custom_user.memory].append(write)
                         write.vector_shapes = custom.vector_shapes
                         break

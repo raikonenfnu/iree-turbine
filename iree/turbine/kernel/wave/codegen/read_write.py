@@ -42,7 +42,7 @@ from ...ops.wave_ops import (
     write,
 )
 
-from ..utils import subs_idxc, find_index_bounds
+from ..utils import subs_idxc, find_index_bounds, _get_fastest_index
 
 from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence, index_symbol
 from ...lang.wave_types import IndexMapping
@@ -84,20 +84,6 @@ def _build_start_indices(
         gen_sympy_index(add_emitter_subs(emitter, dynamic_values), i)
         for i in _get_start_indices(src_indices)
     ]
-
-
-def _get_fastest_index(indices: dict[IndexExpr, IndexSequence]):
-    """
-    This function takes in indices of a Node, extract their sizes
-    into a list, and then try do an argmax on it. In the case where
-    there are multipled max_vals we pick the fastest/most minor one.
-    """
-
-    index_sizes = [subs_idxc(i.size) for i in indices.values()]
-    # Find the maximum value
-    max_size = max(index_sizes)
-    # Find the fastest/most minor index of the maximum value.
-    return max(i for i, size in enumerate(index_sizes) if size == max_size)
 
 
 def _compute_offset(indices: list[IndexExpr], strides: list[IndexExpr]) -> IndexExpr:
