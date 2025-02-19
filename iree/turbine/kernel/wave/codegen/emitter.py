@@ -253,7 +253,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
 
         return None
 
-    overflow_flags = arith_d.IntegerOverflowFlags.nsw | arith_d.IntegerOverflowFlags.nuw
+    overflow_flags = arith_d.IntegerOverflowFlags.nsw
 
     def muli(lhs, rhs):
         if get_const_val(lhs) == 1:
@@ -332,7 +332,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
                 one = _get_const(1)
                 zero = _get_const(0)
                 lhs_minus_one = arith_d.subi(*_broadcast(value.numerator, one))
-                div = arith_d.divui(*_broadcast(lhs_minus_one, value.denominator))
+                div = arith_d.divsi(*_broadcast(lhs_minus_one, value.denominator))
                 result = arith_d.addi(*_broadcast(div, one))
                 cmp = arith_d.cmpi(
                     arith_d.CmpIPredicate.eq, *_broadcast(value.numerator, zero)

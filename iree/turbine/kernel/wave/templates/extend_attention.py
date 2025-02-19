@@ -119,32 +119,36 @@ def get_extend_attention_kernel(
 
     q_mapping = tkw.IndexMapping(
         num_iterators=3,
-        inputs={H: i, N_Q: j + EXT_IDX, D_Q: k},
+        inputs={N_Q: j + EXT_IDX, H: i, D_Q: k},
         outputs={H: i, N_Q: j, D_Q: k},
     )
 
     head_ratio = shape.num_query_heads // shape.num_kv_heads
     k_mapping = tkw.IndexMapping(
         num_iterators=3,
-        inputs={H_KV: i // head_ratio, N_KV: j + EXT_IDX, D_Q: k},
+        # inputs={H_KV: i // head_ratio, N_KV: j + EXT_IDX, D_Q: k},
+        inputs={N_KV: j + EXT_IDX, H_KV: i // head_ratio, D_Q: k},
         outputs={H_KV: i, N_KV: j, D_Q: k},
     )
     k_cache_mapping = tkw.IndexMapping(
         num_iterators=3,
-        inputs={H_KV: i // head_ratio, N_KV: d0, D_Q: k},
+        # inputs={H_KV: i // head_ratio, N_KV: d0, D_Q: k},
+        inputs={N_KV: d0, H_KV: i // head_ratio, D_Q: k},
         outputs={H_KV: i, N_KV: j, D_Q: k},
         dynamic_val_mappings={N_KV: j},
     )
 
     v_mapping = tkw.IndexMapping(
         num_iterators=3,
-        inputs={H_KV: i // head_ratio, D_KV: j, N_KV: k + EXT_IDX},
+        # inputs={H_KV: i // head_ratio, D_KV: j, N_KV: k + EXT_IDX},
+        inputs={N_KV: k + EXT_IDX, H_KV: i // head_ratio, D_KV: j},
         outputs={H_KV: i, D_KV: j, N_KV: k},
     )
 
     v_cache_mapping = tkw.IndexMapping(
         num_iterators=3,
-        inputs={H_KV: i // head_ratio, D_KV: j, N_KV: d0},
+        # inputs={H_KV: i // head_ratio, D_KV: j, N_KV: d0},
+        inputs={N_KV: d0, H_KV: i // head_ratio, D_KV: j},
         outputs={H_KV: i, D_KV: j, N_KV: k},
         dynamic_val_mappings={N_KV: k},
     )
@@ -273,6 +277,11 @@ def get_extend_attention_kernel(
 
         res_max, res_sum, res_mm = first_loop
 
+        if is_causal:
+            seq_len_extend = tkw.apply_expr(
+                seq_len_extend,
+                lambda x: sympy.Min(x, (WORKGROUP_0 + 1) * SEQ_TILE_SIZE),
+            )
         tkw.set_symbol(N_KV, seq_len_extend)
 
         @tkw.reduction(N_KV, init_args=[res_max, res_sum, res_mm])
@@ -337,8 +346,8 @@ def get_extend_attention_kernel(
         STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant[1]),
         BLOCK_H: 1,
         BLOCK_N_Q: SEQ_TILE_SIZE,
-        BLOCK_D_KV: SEQ_TILE_SIZE,
-        BLOCK_N_KV: SEQ_TILE_SIZE // 2,
+        BLOCK_D_KV: SEQ_TILE_SIZE * 2,
+        BLOCK_N_KV: SEQ_TILE_SIZE,
         BLOCK_S: 1,
         H: shape.num_query_heads,
         H_KV: shape.num_kv_heads,
