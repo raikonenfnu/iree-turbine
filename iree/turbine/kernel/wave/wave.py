@@ -40,6 +40,7 @@ from .global_to_shared_gathers import global_to_shared_gathers
 from .hoisting import hoist_loop_invariant_ops
 from .minimize_global_loads import minimize_global_loads
 from .promotion import promote_placeholders
+from .reduce_bank_conflicts import swizzle_shared_memory
 from .reuse_shared_allocs import reuse_shared_allocs
 from .scheduling.schedule import schedule_graph
 from .type_inference import infer_types
@@ -483,6 +484,7 @@ class LaunchableWave(Launchable):
             partial(minimize_global_loads, trace, self.constraints),
             partial(reuse_shared_allocs, trace),
             partial(apply_shared_memory_indexing_corrections, trace, self.constraints),
+            partial(swizzle_shared_memory, trace, self.constraints),
         ]
 
         # Partition strided operators.
