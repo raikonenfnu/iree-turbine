@@ -276,7 +276,10 @@ class LaunchableWave(Launchable):
         for reduction in trace.walk(is_reduction):
             for tiling_constraint in self.tiling_constraints:
                 if tiling_constraint.dim == get_custom(reduction).axis:
-                    reduction.count = subs_idxc(tiling_constraint.count)
+                    try:
+                        reduction.count = subs_idxc(tiling_constraint.count)
+                    except:
+                        breakpoint()
 
     def get_workgroup_dims(self) -> list[int]:
         """
