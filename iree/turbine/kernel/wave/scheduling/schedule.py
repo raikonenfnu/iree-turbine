@@ -9,6 +9,7 @@ from ..constraints import Constraint
 from ..._support.tracing import CapturedTrace
 from ...ops.wave_ops import Reduction, IterArg, get_custom, CustomOp
 from .modulo_scheduling import ModuloScheduler
+from .prefetch_scheduling import PrefetchScheduler
 from .graph_utils import create_scheduling_edges, Edge
 from .resources import get_available_resources, annotate_resource_usage
 from ..visualization import visualize_edges, visualize_graph, visualize_schedule
@@ -41,6 +42,7 @@ Values: 0xAB where:
 class SchedulingType(Enum):
     NONE = 0x00
     MODULO = 0x10
+    PREFETCH = 0x20
 
 
 def is_solver_based(scheduling_type: SchedulingType):
@@ -72,16 +74,19 @@ def schedule_reduction(
         return {}
     reduction_graph = trace.get_subgraph(reduction.subgraph_name)
     graph, node_map = graph_copy(reduction_graph)
+    ignore_nodes, iter_args, output = annotate_resource_usage(graph)
+    edges = create_scheduling_edges(graph, ignore_nodes, iter_args, output)
 
     if is_solver_based(scheduling_type):
-        ignore_nodes, iter_args, output = annotate_resource_usage(graph)
-        edges = create_scheduling_edges(graph, ignore_nodes, iter_args, output)
         scheduler = ModuloScheduler(graph, edges, get_available_resources())
-        schedule, success = scheduler.schedule_graph()
-        initiation_interval = scheduler.initiation_interval
-        num_stages = scheduler.num_stages
+    elif scheduling_type == SchedulingType.PREFETCH:
+        scheduler = PrefetchScheduler(graph, edges, get_available_resources())
     else:
         raise ValueError("Unknown scheduling type")
+
+    schedule, success = scheduler.schedule_graph()
+    initiation_interval = scheduler.initiation_interval
+    num_stages = scheduler.num_stages
 
     if not success:
         raise ValueError("Scheduling failed.")
