@@ -128,7 +128,7 @@ def testTransposedVAttentionPure(
 
 @require_e2e
 @pytest.mark.parametrize("input_shape", get_test_shapes("attention"))
-@pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
+@pytest.mark.parametrize("enable_scheduling", [SchedulingType.PREFETCH])
 @param_bool("dynamic_dims", "dyn", [False])
 @pytest.mark.parametrize(
     "mfma_variant",

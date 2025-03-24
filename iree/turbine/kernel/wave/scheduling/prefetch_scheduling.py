@@ -117,6 +117,7 @@ class PrefetchScheduler:
         root_nodes = get_root_nodes(edges)
         workqueue = deque(root_nodes)
         non_solved_counter = 0
+        t_counter = 0
         while len(workqueue) > 0:
             node = workqueue.popleft()
             is_producer_edge = lambda edge: edge._to == node
@@ -134,10 +135,12 @@ class PrefetchScheduler:
                 # If we went over entire workqueue and still cannot find producer,
                 # means it is missing producer from the edges.
                 non_solved_counter += 1
-                if non_solved_counter >= workqueue:
+                t_counter += 1
+                if non_solved_counter >= len(workqueue):
                     raise ValueError(
                         "Cannot find producer(s) for remaining item in workqueue."
                     )
+                print(t_counter)
                 workqueue.append(node)
                 continue
 
@@ -155,6 +158,9 @@ class PrefetchScheduler:
                 for edge in consumer_edges
                 if edge.weight.iteration_difference == 0
             ]
+            edge_weight = {edge._to: edge.weight.delay for edge in consumer_edges}
+            breakpoint()
+            consumer_nodes.sort(key=lambda item: (edge_weight[item], item))
             workqueue.extend(consumer_nodes)
         return sorted(graph.nodes, key=lambda x: schedule_weight[x])
 
