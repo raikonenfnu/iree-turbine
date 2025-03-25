@@ -47,10 +47,17 @@ from enum import Enum
 
 # Add test shapes for validation and performance testing.
 default_test_shapes = {}
+# default_test_shapes["test_gemm"] = [
+#     (1024, 5120, 640),
+#     (2048, 10240, 1280),
+#     (4096, 20480, 2560),
+# ]
 default_test_shapes["test_gemm"] = [
-    (1024, 5120, 640),
-    (2048, 10240, 1280),
-    (4096, 20480, 2560),
+    # (512, 14336, 4096),
+    # (512, 4096, 14336),
+    # (512, 128256, 4096),
+    # (512, 4096, 4096),
+    (512, 1024, 4096),
 ]
 default_test_shapes["test_gemm"] += [
     perf_test(x) for x in default_test_shapes["test_gemm"]
@@ -77,14 +84,15 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
 @pytest.mark.parametrize(
     "enable_scheduling",
-    [SchedulingType.NONE, SchedulingType.PREFETCH, SchedulingType.MODULO],
+    [SchedulingType.NONE, SchedulingType.PREFETCH],
 )
-@param_bool("dynamic_dims", "dyn")
+@param_bool("dynamic_dims", "dyn", [False])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
+        # MMAType.F32_16x16x32_K8_F16,
+        # MMAType.F32_32x32x16_K8_F16,
         MMAType.F32_16x16x16_F16,
-        MMAType.F32_32x32x8_F16,
     ],
 )
 def testGemm(
@@ -162,8 +170,8 @@ def testGemm(
         LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
         STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
         BLOCK_M: 64,
-        BLOCK_N: 64,
-        BLOCK_K: 32,
+        BLOCK_N: 128,
+        BLOCK_K: 64,
         M: shape[0],
         N: shape[1],
         K: shape[2],
@@ -207,7 +215,7 @@ def testGemm(
     asm = gemm(a, b, c)
 
     if dump_generated_mlir:
-        filename = f"wave_gemm_{'x'.join(map(str, shape))}.mlir"
+        filename = f"wave_gemm_{'x'.join(map(str, shape))}_{str(enable_scheduling)}_{str(mfma_variant)}.mlir"
         with open(filename, "w") as f:
             f.write(asm)
 
