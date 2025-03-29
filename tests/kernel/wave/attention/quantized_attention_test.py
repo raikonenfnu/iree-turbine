@@ -129,13 +129,32 @@ def testAttentionPure(
             MAX_RANGE,
         )
     )
-    output = device_zeros(o_shape, dtype=torch.float32)
-    asm = base_attention(q, k, v, output)
-    torch_ref = torch.nn.functional.scaled_dot_product_attention(
-        q.to(torch.float32) * q_scale,
-        k.to(torch.float32) * k_scale,
-        v.to(torch.float32) * v_scale,
-    )
+    # output = device_zeros(o_shape, dtype=torch.float32)
+    batch = 50
+    import time
+    torch.cuda.synchronize()
+    s_wave = time.time()
+    for i in range(batch):
+        output = device_zeros(o_shape, dtype=torch.float32)
+        base_attention(q, k, v, output)
+        torch.cuda.synchronize()
+    e_wave = time.time()
+    t_wave = e_wave - s_wave
+
+    torch.cuda.synchronize()
+    s_torch = time.time()
+    for i in range(batch):
+        torch_ref = torch.nn.functional.scaled_dot_product_attention(
+            q.to(torch.float32) * q_scale,
+            k.to(torch.float32) * k_scale,
+            v.to(torch.float32) * v_scale,
+        )
+        torch.cuda.synchronize()
+    e_torch = time.time()
+    t_torch = e_torch - s_torch
+    print(t_wave)
+    print(t_torch)
+    breakpoint()
 
     if dump_generated_mlir:
         filename = f"wave_attention_{'x'.join(map(str, input_shape))}.mlir"
