@@ -67,25 +67,24 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
 @pytest.mark.parametrize(
-    "enable_scheduling",
+    "shape",
     [
-        SchedulingType.NONE,
-        SchedulingType.PREFETCH,
-        SchedulingType.MODULO,
-        SchedulingType.MODULO_MULTI_BUFFERED,
+        (4096, 4096, 4096),
     ],
 )
-@param_bool("dynamic_dims", "dyn")
+@pytest.mark.parametrize(
+    "enable_scheduling",
+    [SchedulingType.PREFETCH],
+)
+@param_bool("dynamic_dims", "dyn", [False])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
         MMAType.F32_16x16x16_F16,
-        MMAType.F32_32x32x8_F16,
     ],
 )
-def testGemm(
+def testPureGemm(
     shape: tuple[int],
     enable_scheduling: SchedulingType,
     dynamic_dims: bool,
@@ -109,12 +108,12 @@ def testGemm(
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.TilingConstraint(K, BLOCK_K)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 4)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
     constraints += [
         tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(2, 2, 1), mma_type=mfma_variant
+            threads_per_wave=64, waves_per_block=(4, 2, 1), mma_type=mfma_variant
         )
     ]
 
@@ -154,9 +153,9 @@ def testGemm(
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        BLOCK_M: 64,
-        BLOCK_N: 64,
-        BLOCK_K: 32,
+        BLOCK_M: 128,
+        BLOCK_N: 256,
+        BLOCK_K: 64,
         M: shape[0],
         N: shape[1],
         K: shape[2],

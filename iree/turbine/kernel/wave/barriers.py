@@ -12,6 +12,18 @@ import torch.fx as fx
 from typing import Optional
 
 
+def is_child_graph(maybe_child_graph, maybe_parent_graph):
+    cur_graph = maybe_child_graph
+    ancestor_graphs = set()
+    while not hasattr(cur_graph, "subgraphs"):
+        if not hasattr(cur_graph, "parent_op"):
+            breakpoint()
+            raise ValueError("All subgraphs should have parent_op")
+        cur_graph = cur_graph.parent_op.graph
+        ancestor_graphs.add(cur_graph)
+    return maybe_parent_graph in ancestor_graphs
+
+
 def add_shared_memory_barriers(
     trace: CapturedTrace,
     graph: Optional[fx.Graph] = None,
@@ -40,8 +52,14 @@ def add_shared_memory_barriers(
                 continue
             if type(custom) != type(last_node):
                 # Synchronize after the write to shared memory before we read from it.
-                with graph.inserting_before(node):
-                    SharedMemoryBarrier().add_to_graph(graph)
+                if is_child_graph(custom.graph, last_node.graph):
+                    # If custom is child graph of last_node, we insert barrier in last_node
+                    # to encourage barrier being out of the hot loop.
+                    with last_node.graph.inserting_after(last_node.fx_node):
+                        SharedMemoryBarrier().add_to_graph(last_node.graph)
+                else:
+                    with graph.inserting_before(node):
+                        SharedMemoryBarrier().add_to_graph(graph)
             last_node = custom
         if isinstance(custom, NestedRegionOp):
             last_node = add_shared_memory_barriers(
@@ -50,9 +68,9 @@ def add_shared_memory_barriers(
 
     # Synchronize before the write to shared memory to avoid stepping over
     # reads in the previous iteration of a loop.
-    if is_reduction_subgraph(graph) and last_node:
-        # Insert barrier at start of block, if load from shared memory exist.
-        with graph.inserting_after(graph._root):
-            SharedMemoryBarrier().add_to_graph(graph)
+    # if is_reduction_subgraph(graph) and last_node:
+    #     # Insert barrier at start of block, if load from shared memory exist.
+    #     with graph.inserting_after(graph._root):
+    #         SharedMemoryBarrier().add_to_graph(graph)
 
     return last_node
