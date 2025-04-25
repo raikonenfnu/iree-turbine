@@ -80,6 +80,7 @@ def get_speculative_decoding_kernel(
         uniform_sample: tkl.Memory[B, D, GLOBAL_ADDRESS_SPACE, tkl.f32],
         relu_diff_out: tkl.Memory[B, N, D, GLOBAL_ADDRESS_SPACE, tkl.f32],
         u_out: tkl.Memory[B, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        cdf_out: tkl.Memory[B, N, D, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         last_offset = tkw.read(cur_prob_offset, elements_per_thread=1)
         tkw.set_symbol(LAST_OFFSET, last_offset)
@@ -97,8 +98,10 @@ def get_speculative_decoding_kernel(
 
         zero = tkl.Register[D, tkl.f32](0.0)
         relu_diff = tkw.maximum(diff, zero)
+        cdf = tkw.cumsum(relu_diff, dim=D)
         sum_relu = tkw.sum(relu_diff, dim=D)
         tkw.write(relu_diff, relu_diff_out, mapping=o_mapping)
+        tkw.write(cdf, cdf_out)
         tkw.write(coin * sum_relu, u_out, mapping=u_mapping)
 
     hyperparams = {

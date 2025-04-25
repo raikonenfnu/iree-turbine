@@ -129,6 +129,7 @@ def tree_speculative_sampling_target_only(
     u = torch.zeros(
         [target_probs.shape[0], target_probs.shape[1]], device=target_probs.device
     )
+    cdf = relu_diff = torch.zeros_like(target_probs)
     wave_kernel(
         target_probs,
         draft_probs,
@@ -136,16 +137,13 @@ def tree_speculative_sampling_target_only(
         uniform_samples,
         relu_diff,
         u,
+        cdf,
     )
 
     for bx in range(batch_size):
         sampled_id = d - 1
-        aggregate = 0.0
         for i in range(d):
-            val = relu_diff[bx, cur_prob_offset_vec[bx], i]
-            val = max(val, 0.0)
-            aggregate += val
-            if aggregate > u[bx, cur_prob_offset_vec[bx]]:
+            if cdf[bx, cur_prob_offset_vec[bx], i] > u[bx, cur_prob_offset_vec[bx]]:
                 sampled_id = i
                 break
 

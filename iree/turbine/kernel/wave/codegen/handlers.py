@@ -510,7 +510,7 @@ def handle_or(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
 def handle_gt(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
-        result = arith_d.cmpi(arith_d.CmpFPredicate.OGT, lhs, rhs)
+        result = arith_d.cmpf(arith_d.CmpFPredicate.OGT, lhs, rhs)
     elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
         element_type
     ):
@@ -524,7 +524,7 @@ def handle_gt(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
 def handle_ge(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
-        result = arith_d.cmpi(arith_d.CmpFPredicate.OGE, lhs, rhs)
+        result = arith_d.cmpf(arith_d.CmpFPredicate.OGE, lhs, rhs)
     elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
         element_type
     ):
