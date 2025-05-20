@@ -24,6 +24,10 @@ _e2e_test_shapes["attention"] = [
 _e2e_test_shapes["bhsd_attention"] = [
     (4, 32, 128, 128, 128, 128),
 ]
+_e2e_test_shapes["hyv_attention"] = [
+    (3, 119056, 128, 128, 119056),
+    # (3, 34936, 128, 128, 34936),
+]
 _e2e_test_shapes["chained_gemm"] = _e2e_test_shapes["attention"]
 _e2e_test_shapes["decode_attention"] = _e2e_test_shapes["attention"]
 _e2e_test_shapes["quantized_attention"] = [(1, 4096, 64, 64, 4096)]
@@ -95,6 +99,7 @@ test_names = [
     "gqa_bshd_attention",
     "gqa_bshd_decode_attention",
     "test_block_reduce",
+    "hyv_attention",
 ]
 for test in test_names:
     _perf_test_shapes[test] = _e2e_test_shapes[test]
