@@ -1512,6 +1512,7 @@ class Read(CustomOp):
         if self.mapping is not None:
             return list(self.mapping.output_shape)
         # TODO: This could contain ints.
+        return list(self.memory_type.symbolic_shape)
         shape = list(self.memory_type.symbolic_shape)
         dims = [self.infer_dim(expr) for expr in shape]
         return dims
@@ -1519,7 +1520,8 @@ class Read(CustomOp):
     def infer_type(self):
         dtype = self.memory_type.dtype
         shape = list(self.memory_type.symbolic_shape)
-        self.type = Register[(*shape, dtype)]
+        # self.type = Register[(*shape, dtype)]
+        self.type = Register[(*self.indexing_dims, dtype)]
 
     @property
     def memory_type(self) -> "Memory":
@@ -1840,6 +1842,7 @@ class Write(CustomOp):
         if self.mapping is not None:
             return list(self.mapping.input_shape)
         # TODO: This could contain ints.
+        return list(self.memory_type.symbolic_shape)
         shape = list(self.memory_type.symbolic_shape)
         dims = [self.infer_dim(expr) for expr in shape]
         return dims
@@ -1848,7 +1851,8 @@ class Write(CustomOp):
         address_space = self.memory_type.address_space
         shape = list(self.memory_type.symbolic_shape)
         dtype = self.memory_type.dtype
-        self.type = Memory[(*shape, address_space, dtype)]
+        self.type = Memory[(*self.indexing_dims, address_space, dtype)]
+        # self.type = Memory[(*shape, address_space, dtype)]
 
     @property
     def memory_type(self) -> "Memory":
