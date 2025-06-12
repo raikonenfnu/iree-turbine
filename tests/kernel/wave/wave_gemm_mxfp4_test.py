@@ -6,6 +6,7 @@ import numpy as np
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
+from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 from iree.turbine.kernel.wave.utils.run_utils import (
     set_default_run_config,
 )
@@ -39,12 +40,12 @@ def get_mxfp4_gemm(shape):
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.TilingConstraint(K, BLOCK_K)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 4)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
     constraints += [
         tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(2, 2, 1), mma_type=mfma_variant
+            threads_per_wave=64, waves_per_block=(4, 2, 1), mma_type=mfma_variant
         )
     ]
 
@@ -75,9 +76,9 @@ def get_mxfp4_gemm(shape):
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        BLOCK_M: 32,
-        BLOCK_N: 32,
-        BLOCK_K: 256,
+        BLOCK_M: 256,
+        BLOCK_N: 256,
+        BLOCK_K: 512,
         M: shape[0],
         N: shape[1],
         K: shape[2],
@@ -86,8 +87,7 @@ def get_mxfp4_gemm(shape):
     hyperparams.update(get_default_scheduling_params())
 
     options = WaveCompileOptions(
-        subs=hyperparams,
-        canonicalize=True,
+        subs=hyperparams, canonicalize=True, schedule=SchedulingType.PREFETCH
     )
     options = set_default_run_config(options)
     gemm = wave_compile(options, gemm)
