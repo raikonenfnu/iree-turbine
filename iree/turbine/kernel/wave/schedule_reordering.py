@@ -487,10 +487,10 @@ def transform_MXFP4_PP_clusters(
         slice_rhs_scale_chain_ops_1,
     ) = split_local_load_from_chain(sliced_local_load_rhs_scale[1])
 
-    # TODO: Add NS=3 support because this takes too long from waitcnt, and figure out
-    #       why waitcnt is there even we don't need it until later.
     # TODO: NS3 is also useful so that we can feed write anywhere too.
-    # TODO: Need 32x32x64 and slice more to decrease register pressure.
+    # TODO: Add 32x32x64 with more slices on mma to decrease register pressure.
+
+    # 1st cluster: Global loads lhs/rhs + Shared load sliced(1/2) lhs/rhs scales
     clusters.append(global_load_lhs)
     clusters.append(global_load_rhs)
     clusters.append(flatten_list(sliced_local_load_lhs_scale_0))
@@ -499,12 +499,7 @@ def transform_MXFP4_PP_clusters(
     clusters.append(WorkgroupBarrier().add_to_graph(tmp_graph))
     clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
 
-    # 3rd cluster local writes.
-    # Need to add multi buffer to uncomment this.
-    # clusters.append(local_write_lhs)
-    # clusters.append(local_write_rhs)
-    # clusters.append(local_write_lhs_scale)
-    # clusters.append(local_write_rhs_scale)
+    # 2nd cluster: Global loads lhs/rhs scale + Shared load sliced(1/2) lhs/rhs
 
     clusters.append(global_load_lhs_scale)
     clusters.append(global_load_rhs_scale)
@@ -514,18 +509,21 @@ def transform_MXFP4_PP_clusters(
     clusters.append(WorkgroupBarrier().add_to_graph(tmp_graph))
     clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
 
+    # 3rd cluster: Slice(1/2) Bitcast to mxfp4 + Slice(1/2) MMA
+
     clusters.append(flatten_list(slice_lhs_chain_ops_0))
     clusters.append(flatten_list(slice_rhs_chain_ops_0))
     clusters.append(flatten_list(slice_lhs_scale_chain_ops_0))
     clusters.append(flatten_list(slice_rhs_scale_chain_ops_0))
 
-    # 2nd cluster mma_slice[0].
     clusters.append(SetWavePrio(1).add_to_graph(tmp_graph))
     clusters.append(sliced_mma_nodes[0])
     clusters.append(SetWavePrio(0).add_to_graph(tmp_graph))
 
     clusters.append(WorkgroupBarrier().add_to_graph(tmp_graph))
     clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
+
+    # 4th cluster: Shared load sliced(2/2) lhs scales/rhs scales/ lhs/rhs
 
     clusters.append(flatten_list(sliced_local_load_lhs_scale_1))
     clusters.append(flatten_list(sliced_local_load_rhs_scale_1))
@@ -535,6 +533,8 @@ def transform_MXFP4_PP_clusters(
     clusters.append(WorkgroupBarrier().add_to_graph(tmp_graph))
     clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
 
+    # 5th cluster: Shared write lhs scale/rhs scale/lhs/rhs
+
     clusters.append(local_write_lhs)
     clusters.append(local_write_rhs)
     clusters.append(local_write_lhs_scale)
@@ -542,7 +542,7 @@ def transform_MXFP4_PP_clusters(
     clusters.append(WorkgroupBarrier().add_to_graph(tmp_graph))
     clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
 
-    # 4th cluster mma_slice[1].
+    # 6th cluster: Slice(2/2) Bitcast to mxfp4 + Slice(2/2) MMA
     clusters.append(flatten_list(slice_lhs_chain_ops_1))
     clusters.append(flatten_list(slice_rhs_chain_ops_1))
     clusters.append(flatten_list(slice_lhs_scale_chain_ops_1))
