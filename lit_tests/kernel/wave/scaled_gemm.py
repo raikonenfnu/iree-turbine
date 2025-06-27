@@ -227,7 +227,6 @@ def packed_mxfp4_test():
     M = tkl.sym.M
     N = tkl.sym.N
     K = tkl.sym.K
-    K_SCALE = tkl.sym.K_SCALE
     # Workgroup tile sizes
     BLOCK_M = tkl.sym.BLOCK_M
     BLOCK_N = tkl.sym.BLOCK_N
@@ -282,7 +281,6 @@ def packed_mxfp4_test():
         M: shape[0],
         N: shape[1],
         K: shape[2],
-        K_SCALE: shape[2] // 32,
         READ_SHARED_DELAY: 1,
         WRITE_SHARED_DELAY: 1,
         READ_GLOBAL_DELAY: 2,

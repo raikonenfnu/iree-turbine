@@ -82,10 +82,11 @@ class CompatibleBlockSize:
     block_m: int
     block_n: int
     block_k: int
+    bitwidth: int
 
 
-twoPPConfig = CompatibleBlockSize(128, 256, 64)
-MXFP4PPConfig = CompatibleBlockSize(256, 256, 256)
+twoPPConfig = CompatibleBlockSize(128, 256, 64, 16)
+MXFP4PPConfig = CompatibleBlockSize(256, 256, 256, 4)
 
 
 def get_graph_node(custom: CustomOp, graph: fx.Graph) -> fx.Node:
@@ -97,6 +98,14 @@ def get_graph_node(custom: CustomOp, graph: fx.Graph) -> fx.Node:
 def flatten_list(input_list: list):
     flattened_list, _ = pytree.tree_flatten(input_list)
     return flattened_list
+
+
+def get_mma_bitwidth(mma_node):
+    lhs_dtype = get_custom(mma_node).lhs_type.dtype
+    rhs_dtype = get_custom(mma_node).rhs_type.dtype
+    if lhs_dtype != rhs_dtype:
+        raise NotImplementedError("Not expecting mixed lhs/rhs dtype.")
+    return lhs_dtype.bitwidth()
 
 
 def get_mma_tile_size(mma_nodes, constraints):
@@ -170,7 +179,6 @@ def reorder_graph(graph, clusters):
     # Sometime this could be impacted if use_scheduling_barriers=True,
     # since we get an unexpected workgroup barrier.
     if len(node_list) != total_reordered_node:
-        breakpoint()
         return None
 
     # Schedule pre-cluster, cluster, and post-cluster nodes in new graph.
@@ -322,7 +330,9 @@ def insert_prefetch_loop_barriers(custom_iterate, clusters):
 ##############################################################
 
 
-def select_reorder_strategy(mma_type, mTile, nTile, kTile, hardware_constraint):
+def select_reorder_strategy(
+    mma_type, mTile, nTile, kTile, mma_bitwidth, hardware_constraint
+):
     flat_wave_count = math.prod(hardware_constraint.waves_per_block)
     if flat_wave_count != 8:
         return SchedReorderStrategy.NONE
@@ -330,14 +340,16 @@ def select_reorder_strategy(mma_type, mTile, nTile, kTile, hardware_constraint):
         mTile % twoPPConfig.block_m == 0
         and nTile % twoPPConfig.block_n == 0
         and kTile % twoPPConfig.block_k == 0
+        and mma_bitwidth == twoPPConfig.bitwidth
         and mma_type == MMA
     ):
         return SchedReorderStrategy.TWO_PP_CLUSTER
     elif (
-        mma_type == ScaledMMA
-        and mTile % MXFP4PPConfig.block_m == 0
+        mTile % MXFP4PPConfig.block_m == 0
         and nTile % MXFP4PPConfig.block_n == 0
         and kTile % MXFP4PPConfig.block_k == 0
+        and mma_bitwidth == MXFP4PPConfig.bitwidth
+        and mma_type == ScaledMMA
     ):
         return SchedReorderStrategy.MXFP4_PP_CLUSTER
     else:
@@ -700,8 +712,9 @@ def schedule_reordering(
 
         # Heuristic to select reorder strategy.
         mTile, nTile, kTile = get_mma_tile_size(mma_nodes, constraints)
+        mma_bitwidth = get_mma_bitwidth(mma_nodes[0])
         reorder_strategy = select_reorder_strategy(
-            mma_type, mTile, nTile, kTile, hardware_constraint
+            mma_type, mTile, nTile, kTile, mma_bitwidth, hardware_constraint
         )
 
         # Cannot find a suitable transform, early exit.
