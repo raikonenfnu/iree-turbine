@@ -86,7 +86,7 @@ class CompatibleBlockSize:
 
 
 twoPPConfig = CompatibleBlockSize(128, 256, 64, 16)
-MXFP4PPConfig = CompatibleBlockSize(256, 256, 256, 4)
+MXFP4PPConfig = CompatibleBlockSize(256, 128, 256, 4)
 
 
 def get_graph_node(custom: CustomOp, graph: fx.Graph) -> fx.Node:
@@ -503,70 +503,62 @@ def transform_MXFP4_PP_clusters(
     # TODO: Add 32x32x64 with more slices on mma to decrease register pressure.
 
     # 1st cluster: Global loads lhs/rhs + Shared load sliced(1/2) lhs/rhs scales
-    clusters.append(global_load_lhs)
-    clusters.append(global_load_rhs)
-    clusters.append(flatten_list(sliced_local_load_lhs_scale_0))
-    clusters.append(flatten_list(sliced_local_load_rhs_scale_0))
-
-    clusters.append(WorkgroupBarrier().add_to_graph(tmp_graph))
-    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
-
-    # 2nd cluster: Global loads lhs/rhs scale + Shared load sliced(1/2) lhs/rhs
-
-    clusters.append(global_load_lhs_scale)
-    clusters.append(global_load_rhs_scale)
     clusters.append(flatten_list(sliced_local_load_lhs_0))
     clusters.append(flatten_list(sliced_local_load_rhs_0))
+    clusters.append(global_load_lhs_scale)
+    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
+    clusters.append(flatten_list(sliced_local_load_lhs_scale_0))
+    clusters.append(flatten_list(sliced_local_load_rhs_scale_0))
+    clusters.append(global_load_lhs)
 
+    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
     clusters.append(WorkgroupBarrier().add_to_graph(tmp_graph))
     clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
-
-    # 3rd cluster: Slice(1/2) Bitcast to mxfp4 + Slice(1/2) MMA
 
     clusters.append(flatten_list(slice_lhs_chain_ops_0))
     clusters.append(flatten_list(slice_rhs_chain_ops_0))
     clusters.append(flatten_list(slice_lhs_scale_chain_ops_0))
     clusters.append(flatten_list(slice_rhs_scale_chain_ops_0))
-
-    clusters.append(SetWavePrio(1).add_to_graph(tmp_graph))
     clusters.append(sliced_mma_nodes[0])
-    clusters.append(SetWavePrio(0).add_to_graph(tmp_graph))
 
+    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
     clusters.append(WorkgroupBarrier().add_to_graph(tmp_graph))
     clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
-
-    # 4th cluster: Shared load sliced(2/2) lhs scales/rhs scales/ lhs/rhs
 
     clusters.append(flatten_list(sliced_local_load_lhs_scale_1))
     clusters.append(flatten_list(sliced_local_load_rhs_scale_1))
-    clusters.append(flatten_list(sliced_local_load_lhs_1))
-    clusters.append(flatten_list(sliced_local_load_rhs_1))
-
-    clusters.append(WorkgroupBarrier().add_to_graph(tmp_graph))
+    clusters.append(global_load_rhs_scale)
     clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
 
-    # 5th cluster: Shared write lhs scale/rhs scale/lhs/rhs
+    clusters.append(flatten_list(sliced_local_load_lhs_1))
+    clusters.append(flatten_list(sliced_local_load_rhs_1))
+    clusters.append(global_load_rhs)
+
+    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
+    clusters.append(SharedMemoryBarrier().add_to_graph(tmp_graph))
+    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
 
     clusters.append(local_write_lhs)
     clusters.append(local_write_rhs)
     clusters.append(local_write_lhs_scale)
     clusters.append(local_write_rhs_scale)
+
+    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
     clusters.append(WorkgroupBarrier().add_to_graph(tmp_graph))
     clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
 
-    # 6th cluster: Slice(2/2) Bitcast to mxfp4 + Slice(2/2) MMA
     clusters.append(flatten_list(slice_lhs_chain_ops_1))
     clusters.append(flatten_list(slice_rhs_chain_ops_1))
     clusters.append(flatten_list(slice_lhs_scale_chain_ops_1))
     clusters.append(flatten_list(slice_rhs_scale_chain_ops_1))
 
-    clusters.append(SetWavePrio(1).add_to_graph(tmp_graph))
     clusters.append(sliced_mma_nodes[1])
-    clusters.append(SetWavePrio(0).add_to_graph(tmp_graph))
-    # clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
 
+    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
     clusters.append(WorkgroupBarrier().add_to_graph(tmp_graph))
     clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
+
+    # clusters.append(WorkgroupBarrier().add_to_graph(tmp_graph))
 
     return clusters
 
