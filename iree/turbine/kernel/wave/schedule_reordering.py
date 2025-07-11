@@ -503,62 +503,38 @@ def transform_MXFP4_PP_clusters(
     # TODO: Add 32x32x64 with more slices on mma to decrease register pressure.
 
     # 1st cluster: Global loads lhs/rhs + Shared load sliced(1/2) lhs/rhs scales
-    clusters.append(flatten_list(sliced_local_load_lhs_0))
-    clusters.append(flatten_list(sliced_local_load_rhs_0))
-    clusters.append(global_load_lhs_scale)
-    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
-    clusters.append(flatten_list(sliced_local_load_lhs_scale_0))
+    # clusters.append(WorkgroupBarrier().add_to_graph(tmp_graph))
+    # clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
+    clusters.append(global_load_rhs_scale)
     clusters.append(flatten_list(sliced_local_load_rhs_scale_0))
-    clusters.append(global_load_lhs)
+    clusters.append(flatten_list(sliced_local_load_rhs_scale_1))
 
-    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
-    clusters.append(WorkgroupBarrier().add_to_graph(tmp_graph))
-    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
+    clusters.append(global_load_lhs_scale)
+    clusters.append(flatten_list(sliced_local_load_lhs_scale_0))
+    clusters.append(flatten_list(sliced_local_load_lhs_scale_1))
+
+    clusters.append(global_load_rhs)
+    clusters.append(flatten_list(sliced_local_load_rhs_0))
+    clusters.append(flatten_list(sliced_local_load_rhs_1))
+
+    clusters.append(global_load_lhs)
+    clusters.append(flatten_list(sliced_local_load_lhs_0))
+    clusters.append(flatten_list(sliced_local_load_lhs_1))
 
     clusters.append(flatten_list(slice_lhs_chain_ops_0))
     clusters.append(flatten_list(slice_rhs_chain_ops_0))
     clusters.append(flatten_list(slice_lhs_scale_chain_ops_0))
     clusters.append(flatten_list(slice_rhs_scale_chain_ops_0))
-    clusters.append(sliced_mma_nodes[0])
-
-    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
-    clusters.append(WorkgroupBarrier().add_to_graph(tmp_graph))
-    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
-
-    clusters.append(flatten_list(sliced_local_load_lhs_scale_1))
-    clusters.append(flatten_list(sliced_local_load_rhs_scale_1))
-    clusters.append(global_load_rhs_scale)
-    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
-
-    clusters.append(flatten_list(sliced_local_load_lhs_1))
-    clusters.append(flatten_list(sliced_local_load_rhs_1))
-    clusters.append(global_load_rhs)
-
-    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
-    clusters.append(SharedMemoryBarrier().add_to_graph(tmp_graph))
-    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
-
-    clusters.append(local_write_lhs)
-    clusters.append(local_write_rhs)
-    clusters.append(local_write_lhs_scale)
-    clusters.append(local_write_rhs_scale)
-
-    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
-    clusters.append(WorkgroupBarrier().add_to_graph(tmp_graph))
-    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
-
     clusters.append(flatten_list(slice_lhs_chain_ops_1))
     clusters.append(flatten_list(slice_rhs_chain_ops_1))
     clusters.append(flatten_list(slice_lhs_scale_chain_ops_1))
     clusters.append(flatten_list(slice_rhs_scale_chain_ops_1))
-
+    clusters.append(sliced_mma_nodes[0])
     clusters.append(sliced_mma_nodes[1])
-
-    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
-    clusters.append(WorkgroupBarrier().add_to_graph(tmp_graph))
-    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
-
-    # clusters.append(WorkgroupBarrier().add_to_graph(tmp_graph))
+    clusters.append(local_write_lhs_scale)
+    clusters.append(local_write_rhs_scale)
+    clusters.append(local_write_lhs)
+    clusters.append(local_write_rhs)
 
     return clusters
 
@@ -711,7 +687,8 @@ def schedule_reordering(
 
         # Cannot find a suitable transform, early exit.
         if reorder_strategy == SchedReorderStrategy.NONE:
-            continue
+            clusters = [node for node in graph.nodes][:-1]
+            insert_prefetch_loop_barriers(custom_iterate, clusters)
         elif reorder_strategy == SchedReorderStrategy.TWO_PP_CLUSTER:
             clusters = transform_two_PP_clusters(
                 mma_nodes,
@@ -741,7 +718,7 @@ def schedule_reordering(
             )
             # clusters = [g_node for g_node in graph.nodes][:-1]
             clusters = flatten_list(clusters)
-            insert_prefetch_loop_barriers(custom_iterate, clusters)
+            # insert_prefetch_loop_barriers(custom_iterate, clusters)
         else:
             raise ValueError("Unhandled SchedReorderStrategy case.")
         reordered_graph = reorder_graph(graph, clusters)
@@ -753,4 +730,5 @@ def schedule_reordering(
         trace.add_subgraph(reordered_subgraph_name, reordered_graph)
         trace.get_root_graph().subgraphs[reordered_subgraph_name] = reordered_graph
         custom_iterate.update_arg("subgraph_name", reordered_subgraph_name)
-        add_conditional_barriers_to_loop(custom_iterate, trace, hardware_constraint)
+        if reorder_strategy == SchedReorderStrategy.TWO_PP_CLUSTER:
+            add_conditional_barriers_to_loop(custom_iterate, trace, hardware_constraint)
